@@ -6,7 +6,7 @@ layout: trace
 
 Makrdown을 지원하는 여러 가지 툴과 서비스를 비교 해보려다 귀찮아 github로 무료로 호스팅가능한  Jekyll을 사용하기로한다.
 
-간단하게 사용하기위해 Docker[Docker Hub](https://hub.docker.com/)에서 Jekyll을 검색하고 jekyll/jekyll Docker 이미지를 
+간단하게 사용하기위해 [Docker Hub](https://hub.docker.com/)에서 Jekyll을 검색하고 jekyll/jekyll Docker 이미지를 
 찾았다.
 
 Docker를 이용해 jekyll 프로젝트 생성성을 위해 터미널에서 적당한 디렉토리로 이동해 아래 명령을 입력한다.
