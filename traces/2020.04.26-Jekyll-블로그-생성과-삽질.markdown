@@ -1,0 +1,108 @@
+---
+layout: trace
+---
+
+간단한 개인 기록과 작업내용 들을 기록하기록 한다.
+
+Makrdown을 지원하는 여러 가지 툴과 서비스를 비교 해보려다 귀찮아 github로 무료로 호스팅가능한  Jekyll을 사용하기로한다.
+
+간단하게 사용하기위해 Docker[Docker Hub](https://hub.docker.com/)에서 Jekyll을 검색하고 jekyll/jekyll Docker 이미지를 
+찾았다.
+
+Docker를 이용해 jekyll 프로젝트 생성성을 위해 터미널에서 적당한 디렉토리로 이동해 아래 명령을 입력한다.
+
+```bash
+$ docker run -it --rm -v $PWD:/srv jekyll/jekyll jekyll new /srv/moeblah.github.io
+
+```
+
+프로젝트가 잘생성되었는지 확인해본다.
+
+```bash
+$ ls $PWD/moeblah.github.io
+
+404.html  about.markdown  _config.yml  Gemfile  index.markdown  _posts
+```
+
+프로젝트는 잘생성 되었고 이제 jekyll이 잘 작동하는지 테스트 해보자.
+
+```bash
+docker run -it --rm -p 4000:4000 -v $PWD/moeblah.github.io:/srv/jekyll jekyll/jekyll jekyll serve
+```
+
+안타깝게도 아래 처럼 오류를 뿜어내며 작동하지 않는다.
+```
+Bundler::PermissionError: There was an error while trying to write to `/usr/gem/cache`. It is likely that you need to grant write permissions for that
+path.
+An error occurred while installing rexml (3.2.4), and Bundler cannot continue.
+Make sure that `gem install rexml -v '3.2.4' --source 'https://rubygems.org/'` succeeds before bundling.
+
+```
+
+Docker 이미지를 만들면서 권한 설정이 잘못된듯하다. 
+
+Docker 이미지를 다시 만들어야 겠다.
+
+
+## Jekyll Docker 이미지 생성
+
+### Dockerfile 작성
+Docker 이미지를 새로 만들기위해 Dockerfile을 작성한다. 
+
+```dockerfile
+FROM ubuntu:18.04
+
+RUN apt-get update
+RUN apt-get upgrade -y
+RUN apt-get install -y ruby-full build-essential zlib1g-dev
+
+# 터미널에서 id 명령으로 자신의 uid 를 확인후 같게 설정해주기 바란다.
+# 그렇지 않으면 생성한 jekyll 프로젝트 디랙토리의 권한 문제가 발생할 수 있다.
+ENV USER_UID=1000
+
+RUN useradd -d /jekyll -u $USER_UID -ms /bin/bash jekyll
+USER jekyll
+
+ENV LC_ALL=C.UTF-8
+ENV GEM_HOME="/jekyll/.gems"
+ENV PATH="/jekyll/.gems/bin:$PATH"
+
+RUN mkdir "$GEM_HOME"
+RUN gem install bundler jekyll
+
+RUN jekyll new /jekyll/blog
+WORKDIR /jekyll/blog
+```
+
+
+### Docker 이미지 빌드
+
+작성한 Dockerfile으로 Docker 이미지 생성한다. Docker build 명령은 Dockerfile을
+생성한 디렉토리에서 사용한다.
+
+```bash
+$ docker build --tag moe/jekyll .
+```
+
+docker images를 이용해 생성된 moe/jekyll 이미지를 확인할 수 있다. 
+
+```bash
+$ docker images
+
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+moe/jekyll          latest              43402e773dd8        10 minutes ago      513MB
+ubuntu              18.04               c3c304cb4f22        2 days ago          64.2MB
+```
+
+### Docker 이미지 테스트 
+
+적당한 디렉토리로 이동하여 생성된 Docker 이미지로 Jekyll 프로젝트를 생성한다.
+```bash
+docker run -it --rm -v $PWD:/jekyll moe/jekyll jekyll new /jekyll/moeblah.github.io
+```
+
+생성된 Jekyll 프로젝트를 실행한다.
+```bash
+docker run -it --rm -p 4000:4000 -v $PWD/moeblah.github.io:/jekyll/blog moe/jekyll jekyll serve -H 0.0.0.0
+```
+

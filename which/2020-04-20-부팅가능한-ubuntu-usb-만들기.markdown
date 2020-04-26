@@ -1,5 +1,5 @@
 ---
-layout: page
+layout: default
 title: 부팅가능한 ubuntu usb 스틱 만들기
 ---
 
