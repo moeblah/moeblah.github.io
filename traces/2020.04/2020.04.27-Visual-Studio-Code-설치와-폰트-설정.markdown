@@ -1,0 +1,40 @@
+---
+layout: trace
+---
+
+Visual Studio Code는 클라우드 개발을 위한 강력하고 간단한 코드 편집기이다.
+
+자유롭게 사용할수 있으며 수백 개의 프로그래밍 언어를 지원한다.
+
+
+## Download 및 설치
+
+[https://code.visualstudio.com/download](https://code.visualstudio.com/download)에 방문하여 Debian, Ubuntu 용 설치 파일인 .deb 파일을 다운 받고 다운받은 파일을 확인한다.
+
+```bash
+$ sl -al
+
+code_1.44.2-1587059832_amd64.deb
+```
+
+터미널을 열고 다운로드 받은 디렉토리로 이동하여 deb 페키지 설치를 위한 명령을 입력한다.
+
+```bash
+$ sudo dpkg -i code_1.44.2-1587059832_amd64.deb
+```
+
+페키지 설치가 완료 되면 우부툰 데스크탑 Dock 의 Show Application 메뉴 또는 단축기 Super(Win) + A 키를 이용하여 Application 목록에 Visual Studio Code 가 설치된것을 확인 할 수 있다.
+
+![Visula Studio Code Launcher](/assets/traces/2020.04/27-01-vscode.png){:.alignCenter}
+
+## 폰트 설정
+
+Visual Studio Code 설치후 편집창에 한글을 입력하면 한글이 아래 화면처럼 잘 표현되지 않는경우가 있다.
+
+![Visula Studio Code Launcher](/assets/traces/2020.04/27-02-vscode.png){:.alignCenter}
+
+위와 같은 문제는 폰트 설정을 변경하여 쉽게 해결 할수 있다. ```File -> Preferences -> Settings``` 메뉴 또는 단춬기 ``Ctrl+,`` 키로 설정 화면으로 이동후 ```User -> Text Editor -> Font``` 의 ```Font Family``` 에서 ```'Droid Sans Fallback'``` 항목을 삭제한다.
+
+![Visula Studio Code Launcher](/assets/traces/2020.04/27-03-vscode.png){:.alignCenter}
+
+같은 방법으로 사용하고 싶은 폰트를 Font Family에 등록하면 Visutla Studio Code의 폰트가 변경된다.

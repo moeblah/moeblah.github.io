@@ -2,3 +2,16 @@
 ---
 
 @import "jekyll-theme-midnight";
+
+img.alignLeft{
+    float:left !important;
+} 
+
+img.alignRight{
+    float:right !important;
+} 
+
+img.alignCenter{
+    display:block !important;
+    margin:0 auto !important;
+}

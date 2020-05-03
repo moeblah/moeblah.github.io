@@ -1,0 +1,141 @@
+---
+layout: trace
+---
+
+퇴사전 개발한 프로젝트를 퇴사후 계속 관리 하게 되었다. Python3 + Oracle 으로 개발된 프로젝트인데 
+보안문제로 개발사의 OpenVPN 사용해야 Oracel 에 접속할 수 있게 되었다. 그런데 이 VPN을 사용하면 
+사용할수 없는 프로그램들이 생겨 Docker 로 개발환경을 구성하고 Docker 내부에서 VPN 을 사용 하도록
+개발 환경을 구성하고 자 한다.
+
+## Docker 컨테이너 에서 VPN 연결 테스트
+
+먼저 Docker 내부에서 VPN을 사용할수 있는지 확인하기 위해 Ubuntu Docker 컨테이너를 생성하다.
+
+```bash
+docker run -it --rm -v $PWD:/vpn alpine 
+```
+
+Docker 컨테이너 내부에서 OpenVPN을 설치한다.
+
+```bash
+\# apk add openvpn
+```
+
+OpenVPN 설정 파일을 이용하여 VPN 에 연결시도해본다.
+
+```bash
+\# openvpn --config /vpn/client.ovpn
+
+Mon Apr 27 02:58:24 2020 OpenVPN 2.4.8 x86_64-alpine-linux-musl [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] built on Feb  7 2020
+Mon Apr 27 02:58:24 2020 library versions: OpenSSL 1.1.1g  21 Apr 2020, LZO 2.10
+Mon Apr 27 02:58:24 2020 TCP/UDP: Preserving recently used remote address: [AF_INET]61.43.213.85:1194
+Mon Apr 27 02:58:24 2020 UDP link local: (not bound)
+Mon Apr 27 02:58:24 2020 UDP link remote: [AF_INET]61.43.213.85:1194
+Mon Apr 27 02:58:24 2020 [RT-AC68U] Peer Connection Initiated with [AF_INET]61.43.213.85:1194
+Mon Apr 27 02:58:25 2020 ERROR: Cannot open TUN/TAP dev /dev/net/tun: No such file or directory (errno=2)
+Mon Apr 27 02:58:25 2020 Exiting due to fatal erro
+```
+
+VPN 연결이 되지 않는다. 네트웍 관련 기능을 제공하지 않아 생기는 문제로 --cap-add=NET_ADMIN 과 --device /dev/net/tun 옵션을 사용하거나 --privileged 옵션을 사용해 Privileged Mode로 컨테이너를 실행 하면 해결 된다고 한다.
+
+Docker 컨테이너에 리눅스 커널의 모든 기능을 사용할 수 있는 --privileged 옵션을 주고 다시 컨테이너를 생성한다.
+```bash
+$ docker run -it --rm -v $PWD:/vpn --privileged alpine
+     or 
+$ docker run -it --rm -v $PWD:/vpn --cap-add=NET_ADMIN --device /dev/net/tun alpine
+```
+
+Docker 컨테이너 내부에서 OpenVPN을 설치하고 VPN 연결 을 시도한다.
+
+```bash
+/ # apk add openvpn
+/ # openvpn --config /vpn/client.ovpn
+
+Mon Apr 27 03:17:02 2020 OpenVPN 2.4.8 x86_64-alpine-linux-musl [SSL (OpenSSL)] [LZO] [LZ4] [EPOLL] [MH/PKTINFO] [AEAD] built on Feb  7 2020
+Mon Apr 27 03:17:02 2020 library versions: OpenSSL 1.1.1g  21 Apr 2020, LZO 2.10
+Mon Apr 27 03:17:03 2020 TCP/UDP: Preserving recently used remote address: [AF_INET]61.43.213.85:1194
+Mon Apr 27 03:17:03 2020 UDP link local: (not bound)
+Mon Apr 27 03:17:03 2020 UDP link remote: [AF_INET]61.43.213.85:1194
+Mon Apr 27 03:17:03 2020 [RT-AC68U] Peer Connection Initiated with [AF_INET]61.43.213.85:1194
+Mon Apr 27 03:17:04 2020 TUN/TAP device tun0 opened
+Mon Apr 27 03:17:04 2020 /sbin/ip link set dev tun0 up mtu 1500
+Mon Apr 27 03:17:04 2020 /sbin/ip addr add dev tun0 10.8.0.2/24 broadcast 10.8.0.255
+Mon Apr 27 03:17:04 2020 WARNING: this configuration may cache passwords in memory -- use the auth-nocache option to prevent this
+Mon Apr 27 03:17:04 2020 Initialization Sequence Completed
+```
+
+연결이 잘 되는것을 확인 할수 있다. Docker 컨테이너에서 VPN 사용이 가능 한것을 확인했으니 이제 OpenVPN, Python3, Oracle Instant Client 가 포함된 Docker 이미지를 생성하자.
+
+## Docker 이미지 생성
+
+### Dockerfile
+Openvpn + Python3 + Oricle instantclient 사용하시 위한 Dockerfile 을 아래 처럼 만든다.
+```dockerfile
+FROM ubuntu:18.04
+
+# 한글 지원을 위한 문자 셋 설정
+ENV LC_ALL=C.UTF-8
+
+# tzdata 설치시 위치를 물어보지 않도록 time zone 설정
+ENV TZ=Asia/Seoul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN apt-get update
+RUN apt-get install -y python3 python3-dev \
+    build-essential libssl-dev libffi-dev \
+    libxml2-dev libxslt1-dev zlib1g-dev \
+    python3-pip libaio1 curl unzip openvpn \
+    sudo
+
+# VPN 클라이언트 설정 파일 추가
+# 사용할 VPN 클라이언트 설정 파일을 추가한다.
+ADD client.ovpn /etc/openvpn/client.conf
+# VPN 설정 파일 변경
+RUN sed -i 's/#AUTOSTART="all"/AUTOSTART="all"/' /etc/default/openvpn
+
+# 필요한 Python 라이브러리를 설치
+RUN pip3 install cx_oracle requests lxml==4.2.5 \
+    html5lib beautifulsoup4==4.6.3 apscheduler \
+    pyinstaller pyperclip aiohttp
+
+# Oracle instantclient 다운로드 및 설치
+RUN curl -O https://download.oracle.com/otn_software/linux/instantclient/19600/instantclient-basic-linux.x64-19.6.0.0.0dbru.zip
+RUN unzip -d /opt/oracle instantclient-basic-linux.x64-19.6.0.0.0dbru.zip 
+RUN rm instantclient-basic-linux.x64-19.6.0.0.0dbru.zip
+# 오라클 라이브러리 경로 설정
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_19_6:$LD_LIBRARY_PATH
+
+# 사용자 추가
+RUN useradd -ms /bin/bash developer
+# vpn 연결시 root 권한이 필요하기때문에 root 권한으로 프로그램을 실행할 수 있도록 사용자에게 sudo 그룹을 추가
+RUN usermod -aG sudo developer
+# sudo 명령 실행시 비밀번호를 물어보지 않도록 설정한다.
+RUN echo 'developer ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+# 프로젝트 디렉토리 생성
+RUN mkdir /Project
+RUN chown developer:developer /Project
+
+# 사용자를 developer로 변경
+USER developer
+
+# 작업 디렉토리를 Project 로 변경
+WORKDIR /Projects
+```
+
+### Docker build
+Dockerfile 이 저정되어 있는 디렉토리로 이동하여 Docker 이미지를 생성한다.
+```bash
+$ docker build --tag moe/project .
+```
+
+### Docker 컨테이너 테스트
+
+Docker 컨테이너에서 vpn 연결이 잘작동하는지 확인하기 위해서 아래 명령을 입력한다.
+
+```bash
+$  docker run -it --rm --privileged moe/project \
+   sh -c 'sudo service openvpn start && sleep 5 && curl ifconfig.io && bash'
+```
+
+VPN 서버의 IP가 찍히고 컨테이너 Bash Shell이 실행 되었다면 컨테이너가 성공적으로 생성된 것이다.
+

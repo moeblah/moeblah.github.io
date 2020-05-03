@@ -1,0 +1,152 @@
+---
+layout: trace
+---
+
+Gradle은 Java를 지원하는 오픈 소스 빌드 자동화 도구이다. Gradle을 이용해 Java 프로젝트를 생성한다. 
+
+공식 사이트 : [https://gradle.org/](https://gradle.org/)
+
+## Gradle 설치
+
+Gradle은 주요 운영체에세서 실행되며 Java Develoment Kit 버전 8 또는 그이상에서 실행된다.
+```java -version```을 싱행하여 확인가능하며 아래 처럼 실행해 볼 수 있다. Java가 설치 되어있지
+않다면 Java를 먼저 설치하여야한다. Java가 설치되어 있는지 확인한다.
+
+```bash
+$ java -version
+
+openjdk version "11.0.7" 2020-04-14
+OpenJDK Runtime Environment (build 11.0.7+10-post-Ubuntu-3ubuntu1)
+OpenJDK 64-Bit Server VM (build 11.0.7+10-post-Ubuntu-3ubuntu1, mixed mode, sharing)
+```
+
+openjdk version 11.0.7이 설치되어 있다. Gradle만 설치 한다. Ubuntu 패키지 관리자를 이용하면 쉽게 설치
+가능하지만 특정 버전을 사용하기 위해서는 수동으로 설치한다.
+
+### Gradle Download
+
+Gradle 은 [https://gradle.org/releases/](https://gradle.org/releases/)에서 최신 버전 및 특정
+버전을 다운 받을 수있다.
+
+Gradle을 다운 받고 다운 받은 파일의 압축을 풀어준다.
+
+```bash
+$ curl -O https://downloads.gradle-dn.com/distributions/gradle-6.3-bin.zip
+$ mkdir -p $HOME/.local/opt
+$ unzip -d $HOME/.local/opt/gradle gradel-6.3.bin.zip
+$ ls $HOME/.local/opt/gradle/gradle-6.3
+
+LICENSE  NOTICE  README  bin  init.d  lib
+```
+
+### PATH 환경변수 수정
+
+Gradle을 사용하기 위해서 PATH 환경 변수에 압축을 푼 배포버전의  ```bin``` 디렉토리를 추가하여야한다.
+```echo $PATH``` 명령을 이용해 PATH 환경 변수설정을 확인 할 수 있다.
+
+```bash
+$ export PATH=$PATH:$HOME/.local/opt/gradle/gradle-6.3/bin
+$ echo 'export PATH=$PATH:$HOME/.local/opt/gradle/gradle-6.3/bin' >> $HOME/.profile
+$ echo $PATH
+```
+
+## Gradle 프로젝트 생성
+
+프로젝트 디렉토리를 먼저 만들고 디렉토리로 이동후 ```gradle init``` 명령을 실행하면 대화식 명령창이 뜨며,
+모든 과정을 완료 하면 Gradle Java 프로젝트가 생성된다.
+
+```bash
+$ mkdir -p $HOME/Projects/GradleTest
+$ cd $HOME/Projects/GradleTest
+$ gradle init
+
+Select type of project to generate:
+  1: basic
+  2: application
+  3: library
+  4: Gradle plugin
+Enter selection (default: basic) [1..4] 2
+
+Select implementation language:
+  1: C++
+  2: Groovy
+  3: Java
+  4: Kotlin
+  5: Swift
+Enter selection (default: Java) [1..5] 
+
+Select build script DSL:
+  1: Groovy
+  2: Kotlin
+Enter selection (default: Groovy) [1..2] 
+
+Select test framework:
+  1: JUnit 4
+  2: TestNG
+  3: Spock
+  4: JUnit Jupiter
+Enter selection (default: JUnit 4) [1..4] 
+
+Project name (default: GradleTest): 
+Source package (default: GradleTest): org.test.GradleTest
+
+> Task :init
+Get more help with your project: https://docs.gradle.org/6.3/userguide/tutorial_java_projects.html
+```
+
+프로젝트 생성시 프로젝트 타입, 프로젝트 이름 그리고 소스 패키지 정보 입력에만 주의를 기울이면 쉽게 프로젝트가 생성된다.
+
+생성된 프로젝트를 테스트 하기 위해 아래처럼 ```gradle run``` 명령을 실행하면 프로젝트를 실행되고 ```Hello world.``` 라는
+문구가 출력되는 것을 확인할 수 있다.
+
+```bash
+$ ./gradlew run
+
+> Task :run
+Hello world.
+
+BUILD SUCCESSFUL in 1s
+2 actionable tasks: 2 executed
+```
+
+## Gradle Java 프로젝트 구조
+
+생성된 프로젝트는 아래와 같은 구조를 가진다.
+
+```tree
+├── build
+├── build.gradle
+├── gradle
+│   └── wrapper
+│       ├── gradle-wrapper.jar
+│       └── gradle-wrapper.properties
+├── gradlew
+├── gradlew.bat
+├── settings.gradle
+└── src
+    ├── main
+    │   ├── java
+    │   │   └── org
+    │   │       └── test
+    │   │           └── GradleTest
+    │   │               └── App.java
+    │   └── resources
+    └── test
+        ├── java
+        │   └── org
+        │       └── test
+        │           └── GradleTest
+        │               └── AppTest.java
+        └── resources
+
+```
+
+ * build : 컴파일된 바이너리 파일이 저장되는 디렉토리
+ * build.gradle : 현제 프로젝트 구성을 위한 Gradle 빌드 스크립트
+ * gradle/wapper/gradle-wapper.jar : Gradle Wrapper 실행 JAR
+ * gradle/wrapper/gradle-wrapper.properties : Gradle Wrapper 구성 속성
+ * gradlew : Unix 기반 시스템을 위한 Gradle Wrapper 스크립트
+ * gradlew.bat : Windows를 위한 Gradle Wrapper 스크립트
+ * settings.gradle : Gradle 빌드 구성을 위한 Gradle 설정 스크립트
+ * src/main/java : 기본 자바 소스 디렉토리
+ * src/test/java : 기본 자바 테스트 디렉토리

@@ -2,14 +2,14 @@
 layout: trace
 ---
 
-간단한 개인 기록과 작업내용 들을 기록하기록 한다.
+간단한 개인 기록과 작업내용들을 기록하기록 한다.
 
 Makrdown을 지원하는 여러 가지 툴과 서비스를 비교 해보려다 귀찮아 github로 무료로 호스팅가능한  Jekyll을 사용하기로한다.
 
-간단하게 사용하기위해 [Docker Hub](https://hub.docker.com/)에서 Jekyll을 검색하고 jekyll/jekyll Docker 이미지를 
-찾았다.
+Jekyll을 사용하기위해서 Ruby를 설치해야 한다. Ruby 는 처음이기 때문에 시스템에 직접 설치하는 것보다 Docker를 사용하여 
+설치하기로 한다. [Docker Hub](https://hub.docker.com/)에서 Jekyll을 검색 하여 jekyll/jekyll Docker 이미지를 찾았다.
 
-Docker를 이용해 jekyll 프로젝트 생성성을 위해 터미널에서 적당한 디렉토리로 이동해 아래 명령을 입력한다.
+터미널에서 적당한 디렉토리로 이동해 아래 명령을 이용해 Docker 컨테이너를 생성한다.
 
 ```bash
 $ docker run -it --rm -v $PWD:/srv jekyll/jekyll jekyll new /srv/moeblah.github.io
@@ -27,7 +27,7 @@ $ ls $PWD/moeblah.github.io
 프로젝트는 잘생성 되었고 이제 jekyll이 잘 작동하는지 테스트 해보자.
 
 ```bash
-docker run -it --rm -p 4000:4000 -v $PWD/moeblah.github.io:/srv/jekyll jekyll/jekyll jekyll serve
+$ docker run -it --rm -p 4000:4000 -v $PWD/moeblah.github.io:/srv/jekyll jekyll/jekyll jekyll serve
 ```
 
 안타깝게도 아래 처럼 오류를 뿜어내며 작동하지 않는다.
@@ -106,3 +106,6 @@ docker run -it --rm -v $PWD:/jekyll moe/jekyll jekyll new /jekyll/moeblah.github
 docker run -it --rm -p 4000:4000 -v $PWD/moeblah.github.io:/jekyll/blog moe/jekyll jekyll serve -H 0.0.0.0
 ```
 
+웹브라우저에서 http://localhost:4000 으로 접속하여 Jekyll이 잘작동하는지 확인한다.
+
+다행히 잘작동한다.
