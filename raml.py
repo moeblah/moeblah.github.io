@@ -1,21 +1,24 @@
+# from __future__ import annotations
+
 import re
 import inspect
+import logging
 
 from typing import (
-    Type as _Type, List as _List, Dict as _Dict,
-    Union as _Union, TypeVar as _TypeVar, Generic as _Generic,
-    Callable as _Callable,
+    Type as _Type, List as _List,  # Dict as _Dict,
+    Union as _Union, TypeVar as _TypeVar,
+    Generic as _Generic, Any as _Any, Callable as _Callable,
 )
 
 _T = _TypeVar('_T')
-T_BaseRaml= _TypeVar('T_BaseRaml', bound='BaseRaml')
-T_API = _TypeVar('T_API', bound='API')
+T_BaseRaml = _TypeVar('T_BaseRaml', bound='BaseRaml')
+T_Api = _TypeVar('T_Api', bound='Api')
 T_DocumentationItem = _TypeVar('T_DocumentationItem', bound='DocumentationItem')
 T_Resource = _TypeVar('T_Resource', bound='Resource')
 T_Method = _TypeVar('T_Method', bound='Method')
 T_Response = _TypeVar('T_Response', bound='Response')
-T_RequestBody = _TypeVar('T_RequestBody', bound='RequestBody')
-T_ResponseBody = _TypeVar('T_ResponseBody', bound='ResponseBody')
+# T_RequestBody = _TypeVar('T_RequestBody', bound='RequestBody')
+# T_ResponseBody = _TypeVar('T_ResponseBody', bound='ResponseBody')
 # todo : Create TypeDeclaration Class
 # T_TypeDeclaration = _TypeVar('T_TypeDeclaration', bound='TypeDeclaration')
 
@@ -36,20 +39,20 @@ T_AnnotationTypes = _TypeVar('T_AnnotationTypes', bound='AnnotationTypes')
 """
 def load_raml(filename) -> _Type[T_BaseRaml]:
     pass
-
 def include(filename) -> _Type[T_BaseRaml]:
     pass
-
 def extends(filename) -> _Type[T_BaseRaml]:
     pass
-
 def overwrite(filename) -> _Type[T_BaseRaml]:
     pass
 """
 
+logging.basicConfig(level=logging.DEBUG)
+
+
 class RamlMetaClass(type):
     def __new__(mcs, name, bases, namespace):
-        attributes : dict = namespace.get('__annotations__', {})
+        attributes: dict = namespace.get('__annotations__', {})
         attributes = attributes.copy()
         for base in bases:
             if issubclass(base, BaseRaml):
@@ -73,17 +76,15 @@ class RamlMetaClass(type):
         return obj
 
     def __set_name__(self, owner, name):
-        print (f'RamlMetaClass.__set_name__({owner}, {name}) <- {self}')
+        logging.debug(f'RamlMetaClass.__set_name__({owner}, {name}) <- {self}')
         setattr(self, '__attr_name__', name)
 
     def __get__(self, instance, owner):
-        print (f'RamlMetaClass.__get__({instance}, {owner}) <- {self}')
+        logging.debug(f'RamlMetaClass.__get__({instance}, {owner}) <- {self}')
         return self
 
-    '''
     def __set__(self, instance, value):
-        pass
-    '''
+        logging.debug(f'RamlMetaClass.__set__({instance}, {value}) <- {self}')
 
 
 class BaseRaml(metaclass=RamlMetaClass):
@@ -92,39 +93,43 @@ class BaseRaml(metaclass=RamlMetaClass):
         for key, item in kwargs.items():
             setattr(self, key, item)
 
-    """
-    def __get__(self, instance, owner):
-        pass
-
-    def __set__(self, instance, value):
-        pass
-    """
-
     def __set_name__(self, owner, name):
-        print (f'BaseRaml.__set_name__({owner}, {name}) <- {self}')
+        logging.debug(f'BaseRaml.__set_name__({owner}, {name}) <- {self}')
         cls = RamlMetaClass(name, (self.__class__, ), self.__dict__)
         setattr(owner, name, cls)
 
+    def __get__(self, instance, owner):
+        logging.debug(f'BaseRaml.__set__({instance}, {owner}) <- {self}')
+        return self
+
+    def __set__(self, instance, value):
+        logging.debug(f'BaseRaml.__set__({instance}, {value}) <- {self}')
 
     @classmethod
     def to_raml(cls):
         raml = {}
         attributes = getattr(cls, '__raml_attributes__', {})
+
+        is_raml: _Callable[[_Any], bool] = lambda x: inspect.isclass(x) and issubclass(x, BaseRaml)
+
         for attr in attributes.keys():
             value: _Union[_Type[_T], object] = getattr(cls, attr, None)
-            if inspect.isclass (value) and issubclass(value, BaseRaml):
+            if is_raml(value):
                 value = value.to_raml()
-            raml[attr] = value
+            elif isinstance(value, list):
+                value = [v.to_raml() if is_raml(v) else v for v in value]
+            if value is not None:
+                raml[attr] = value
         return raml
 
 
 class RamlList(BaseRaml):
     __items__: _List[BaseRaml]
 
-    def append(self, obj:BaseRaml):
+    def append(self, obj: BaseRaml):
         self.__items__.append(obj)
 
-    def insert(self, index: int, obj:BaseRaml):
+    def insert(self, index: int, obj: BaseRaml):
         self.__items__.insert(index, obj)
 
     def items(self) -> list:
@@ -140,7 +145,7 @@ class Xml(BaseRaml):
 
 
 class Properties(BaseRaml):
-    __allowed__: _Union[None, _Type[BaseRaml], _List[BaseRaml]] = None
+    __allowed__: _Union[None, _Type[BaseRaml], _List[_Type[BaseRaml]]] = None
 
 
 class Facets(Properties):
@@ -154,8 +159,9 @@ class AnnotationTypes(Properties):
 class Types(Properties):
     pass
 
+
 # noinspection PyPep8Naming
-class Type(BaseRaml):
+class Type(_Generic[T_Type], BaseRaml):
     annotations: _List[_Type[T_Type]]
     type: str
     displayName: str
@@ -167,20 +173,22 @@ class Type(BaseRaml):
     examples: object
     xml: _Type[Xml]
 
-    def __init__(self, *args,
-                 type_:str=None,
-                 annotations:_List[_Type[T_Type]]=None,
-                 displayName:str=None,
-                 description:str=None,
-                 enum:_List[object]=None,
-                 facets:_Type[Facets]=None,
-                 default:object=None,
-                 example:object=None,
-                 examples:object=None,
-                 xml:_Type[Xml]=None,
-                 **kwargs
-                 ):
-        kwargs['type'] = type_
+    def __init__(
+            self, *args,
+            type_: str = None,
+            annotations: _List[_Type[T_Type]] = None,
+            displayName: str = None,
+            description: str = None,
+            enum: _List[object] = None,
+            facets: _Type[Facets] = None,
+            default: object = None,
+            example: object = None,
+            examples: object = None,
+            xml: _Type[Xml] = None,
+            **kwargs
+    ):
+
+        kwargs['type'] = getattr(self.__class__, 'type',  type_)
         kwargs['annotations'] = annotations
         kwargs['displayName'] = displayName
         kwargs['description'] = description
@@ -201,7 +209,6 @@ class Any(Type):
     pass
 
 
-
 # noinspection PyPep8Naming
 class Object(Type):
     type = 'object'
@@ -215,12 +222,12 @@ class Object(Type):
     def __init__(
             self,
             *args,
-            properties:_Type[Properties]=None,
-            minProperties:object=None,
-            maxProperties:object=None,
-            additionalProperties:bool=None,
-            discriminator:str=None,
-            discriminatorValue:str=None,
+            properties: _Type[Properties] = None,
+            minProperties: object = None,
+            maxProperties: object = None,
+            additionalProperties: bool = None,
+            discriminator: str = None,
+            discriminatorValue: str = None,
             **kwargs
     ):
         kwargs['properties'] = properties
@@ -240,13 +247,14 @@ class Array(Type):
     minItems: int                           # default 0
     maxItems: int                           # default 2147483647
 
-    def __init__(self, *args,
-                 uniqueItems:bool=None,
-                 items:_Type[Type]=None,
-                 minItems:int=None,
-                 maxItems:int=None,
-                 **kwargs
-     ):
+    def __init__(
+            self, *args,
+            uniqueItems: bool = None,
+            items: _Type[Type] = None,
+            minItems: int = None,
+            maxItems: int = None,
+            **kwargs
+    ):
         kwargs['uniqueItems'] = uniqueItems
         kwargs['items'] = items
         kwargs['minItems'] = minItems
@@ -261,11 +269,12 @@ class String(Type):
     maxLength: int  # default 2147483647
     pattern: str  # Regular expression
 
-    def __init__(self, *args,
-                 minLength:int=None,
-                 maxLength:int=None,
-                 pattern:str=None,
-                 **kwargs
+    def __init__(
+            self, *args,
+            minLength: int = None,
+            maxLength: int = None,
+            pattern: str = None,
+            **kwargs
     ):
         kwargs['minLength'] = minLength
         kwargs['maxLength'] = maxLength
@@ -281,12 +290,13 @@ class Number(Type):
     format: str
     multipleOf: int
 
-    def __init__(self, *args,
-                 minimum:int=None,
-                 maximum:int=None,
-                 format_:str=None,
-                 multipleOf:int=None,
-                 **kwargs
+    def __init__(
+            self, *args,
+            minimum: int = None,
+            maximum: int = None,
+            format_: str = None,
+            multipleOf: int = None,
+            **kwargs
     ):
         kwargs['minimum'] = minimum
         kwargs['maximum'] = maximum
@@ -338,14 +348,19 @@ class Boolean(Type):
 # noinspection PyPep8Naming
 class Datetime(Type):
     type = 'datetime'
-    format: str  # default RFC3339 yyyy-mm-ddThh:mm:ss[.ff...]Z
-    def __init__(self, *args, format_:str=None, **kwargs):
+    format: str  # default RFC3339 yyyy-mm-ddThh: mm: ss[.ff...]Z
+
+    def __init__(
+            self, *args,
+            format_: str = None,
+            **kwargs
+    ):
         kwargs['format'] = format_
         super().__init__(*args, **kwargs)
 
 
 class DatetimeOnly(Datetime):
-    type = 'datetime-only'  # default RFC3339 yyyy-mm-ddThh:mm:ss[.ff...]
+    type = 'datetime-only'  # default RFC3339 yyyy-mm-ddThh: mm: ss[.ff...]
 
 
 class DateOnly(Datetime):
@@ -353,7 +368,7 @@ class DateOnly(Datetime):
 
 
 class TimeOnly(Datetime):
-    type = 'time-only'  # default RFC3339 hh:mm:ss[.ff...]
+    type = 'time-only'  # default RFC3339 hh: mm: ss[.ff...]
 
 
 # noinspection PyPep8Naming
@@ -362,11 +377,13 @@ class File(Type):
     fileTypes: _List[str]
     minLength: int  # default = 0
     maxLength: int  # default = 2147483647
-    def __init__(self, *args,
-                 fileTypes:_List[str]=None,
-                 minLength:int=None,
-                 maxLength:int=None,
-                 **kwargs
+
+    def __init__(
+            self, *args,
+            fileTypes: _List[str] = None,
+            minLength: int = None,
+            maxLength: int = None,
+            **kwargs
     ):
         kwargs['fileTypes'] = fileTypes
         kwargs['minLength'] = minLength
@@ -392,7 +409,7 @@ class QueryParameter(Properties):
 
 
 class Body(Object):
-    type = None
+    pass
 
 
 # noinspection PyPep8Naming
@@ -402,12 +419,13 @@ class Response(BaseRaml):
     headers: _Type[Header]
     body: _Type[Body]
 
-    def __init__(self, *args,
-                 description: str = None,
-                 annotations: _List[_Type[Type]] = None,
-                 headers: _Type[Header] = None,
-                 body: _Type[Body] = None,
-                 **kwargs
+    def __init__(
+            self, *args,
+            description: str = None,
+            annotations: _List[_Type[Type]] = None,
+            headers: _Type[Header] = None,
+            body: _Type[Body] = None,
+            **kwargs
     ):
         kwargs['description'] = description
         kwargs['annotations'] = annotations
@@ -417,7 +435,7 @@ class Response(BaseRaml):
 
 
 # noinspection PyPep8Naming
-class Method(BaseRaml):
+class Method(_Generic[T_Trait], BaseRaml):
     displayName: str
     description: str
     annotations: _List[_Type[Type]]
@@ -430,19 +448,20 @@ class Method(BaseRaml):
     is_: _Type[T_Trait]
     securedBy: str
 
-    def __init__(self, *args,
-                 displayName:str=None,
-                 description:str=None,
-                 annotations:_List[_Type[Type]]=None,
-                 queryParameters:_Type[QueryParameter]=None,
-                 headers:_Type[Header]=None,
-                 queryString:_Type[Object]=None,
-                 response:_Type[Response]=None,
-                 body:_Type[Body]=None,
-                 protocols:_List[str]=None,
-                 is_: _Type[T_Trait]=None,
-                 securedBy:str=None,
-                 **kwargs
+    def __init__(
+            self, *args,
+            displayName: str = None,
+            description: str = None,
+            annotations: _List[_Type[Type]] = None,
+            queryParameters: _Type[QueryParameter] = None,
+            headers: _Type[Header] = None,
+            queryString: _Type[Object] = None,
+            response: _Type[Response] = None,
+            body: _Type[Body] = None,
+            protocols: _List[str] = None,
+            is_: _Type[T_Trait] = None,
+            securedBy: str = None,
+            **kwargs
     ):
         kwargs['displayName'] = displayName
         kwargs['description'] = description
@@ -455,11 +474,17 @@ class Method(BaseRaml):
         kwargs['protocols'] = protocols
         kwargs['is'] = is_
         kwargs['securedBy'] = securedBy
+        super().__init__(*args, **kwargs)
 
 
 class Trait(Method):
     usage: str
-    def __init__(self, *args, usage:str=None, **kwargs):
+
+    def __init__(
+            self, *args,
+            usage: str = None,
+            **kwargs
+    ):
         kwargs['usage'] = usage
         super().__init__(*args, **kwargs)
 
@@ -469,7 +494,7 @@ class Traits(Properties):
 
 
 # noinspection PyPep8Naming
-class Resource(BaseRaml):
+class Resource(_Generic[T_Resource], BaseRaml):
     uris: _Union[str, _List[str]]
     displayName: str
     description: str
@@ -483,20 +508,21 @@ class Resource(BaseRaml):
     head: _Type[Method]
     resources: _List[_Type[T_Resource]]
 
-    def __init__(self, *args,
-                 uris:_Union[str, _List[str]]=None,
-                 displayName:str=None,
-                 description:str=None,
-                 annotations:_List[_Type[Type]]=None,
-                 get:_Type[Method]=None,
-                 patch:_Type[Method]=None,
-                 put:_Type[Method]=None,
-                 post:_Type[Method]=None,
-                 delete:_Type[Method]=None,
-                 options:_Type[Method]=None,
-                 head:_Type[Method]=None,
-                 resources:_List[_Type[T_Resource]]=None,
-                 **kwargs
+    def __init__(
+            self, *args,
+            uris: _Union[str, _List[str]] = None,
+            displayName: str = None,
+            description: str = None,
+            annotations: _List[_Type[Type]] = None,
+            get: _Type[Method] = None,
+            patch: _Type[Method] = None,
+            put: _Type[Method] = None,
+            post: _Type[Method] = None,
+            delete: _Type[Method] = None,
+            options: _Type[Method] = None,
+            head: _Type[Method] = None,
+            resources: _List[_Type[T_Resource]] = None,
+            **kwargs
     ):
         kwargs['uris'] = uris
         kwargs['displayName'] = displayName
@@ -515,10 +541,11 @@ class Resource(BaseRaml):
 
 # load from raml file
 class Uses(Properties):
-    __allowed__ = [Types, 'ResourceTypes', Traits, 'SecuritySchemes', AnnotationTypes, ]
+    # __allowed__ = [Types, 'ResourceTypes', Traits, 'SecuritySchemes', AnnotationTypes, ]
+    __allowed__ = [Types, Traits, AnnotationTypes, ]
 
 
-class API(BaseRaml):
+class Api(BaseRaml):
     title: str
     description: str
     version: str
@@ -526,7 +553,7 @@ class API(BaseRaml):
     baseUriParameters: _Type[UriParameters]
     protocols: _List[str]
     mediaType: _Union[str, _List[str]]
-    documentation: _List[DocumentationItem]
+    documentation: _List[_Type[DocumentationItem]]
     types: _Type[Types]
     traits: _Type[Traits]
     resourceTypes: object
@@ -536,4 +563,3 @@ class API(BaseRaml):
     uses: _Type[Uses]
     resources: _List[Resource]
     extends: str                                # raml file name todo:
-
