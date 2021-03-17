@@ -1,5 +1,6 @@
 import yaml
-from pyraml.raml import *
+from typing import Type as _Type
+from tests.utiles.raml.pyraml import *
 
 
 def str_presenter(dumper, data):
@@ -31,6 +32,56 @@ class DocumentationLegal(DocumentationItem):
     content = '''Legal Content'''
 
 
+
+class Person(Object):
+    description = '사람'
+
+    # noinspection PyPep8Naming
+    class properties:
+        name: String  = String(description="이름")
+        age: Integer = Integer(description="나이")
+
+class Employee(Person):
+
+    # noinspection PyPep8Naming
+    class properties:
+        id: String = String(description="아이디")
+
+
+class HasHome(Object):
+    # noinspection PyPep8Naming
+    class properties:
+        homeAddress: String = String()
+
+class Cat(Object):
+    # noinspection PyPep8Naming
+    class properties:
+        name: String = String()
+        color: String = String()
+
+class Dog(Object):
+    # noinspection PyPep8Naming
+    class properties:
+        name: String = String()
+        fangs: String = String()
+
+class HomeAnimal(HasHome, Cat):
+    pass
+
+
+
+# noinspection PyStatementEffect
+class TestApiTypes(Types):
+    Person: _Type[Object] = Object(
+        description = "사람",
+        properties = Properties.make(
+            name = String(description='이름'),
+            age = Integer()
+        )
+    )
+
+
+
 class TestApi(Api):
     title = 'Test Api'
     description = 'Test Api description'
@@ -40,15 +91,23 @@ class TestApi(Api):
     protocols = ['HTTP', 'HTTPS']
     mediaType = 'application/json'
     documentation = [DocumentationHome, DocumentationLegal]
+    types = TestApiTypes
 
 
 print(
     f'''#%RAML 1.0{
     yaml.dump(
         TestApi.to_raml(),
-        default_flow_style=False, sort_keys=False,
+        default_flow_style=False, 
         allow_unicode=True
     )
     }
     '''
 )
+a = TestApi()
+c = a.baseUriParameters
+t = TestApiTypes()
+d = TestApiTypes.Person()
+d.properties.name = 'abcd'
+t.Person = d.properties
+pass
