@@ -2,7 +2,6 @@ import yaml
 from typing import Type as _Type
 from tests.utiles.raml.pyraml import *
 
-
 def str_presenter(dumper, data):
     if len(data.splitlines()) > 1:  # check for multiline string
         return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
@@ -32,16 +31,21 @@ class DocumentationLegal(DocumentationItem):
     content = '''Legal Content'''
 
 
-
 class Person(Object):
     description = '사람'
 
     # noinspection PyPep8Naming
     class properties:
-        name: String  = String(description="이름")
+        name: String = String(description="이름")
         age: Integer = Integer(description="나이")
 
+    def __get__(self, instance, owner) -> _Type[properties]:
+        return super().__get__(instance, owner)
+
+
 class Employee(Person):
+    displayName = '회사원'
+    description = '회사원 정보'
 
     # noinspection PyPep8Naming
     class properties:
@@ -53,11 +57,15 @@ class HasHome(Object):
     class properties:
         homeAddress: String = String()
 
+
 class Cat(Object):
+    displayName = '고양이'
+
     # noinspection PyPep8Naming
     class properties:
         name: String = String()
         color: String = String()
+
 
 class Dog(Object):
     # noinspection PyPep8Naming
@@ -65,21 +73,23 @@ class Dog(Object):
         name: String = String()
         fangs: String = String()
 
-class HomeAnimal(HasHome, Cat):
+
+class HomeAnimal(HasHome, Cat):             # type: ignore
     pass
 
 
+class Zoo(Object):
+    # noinspection PyPep8Naming
+    class properties:
+        name: String = String()
+        cats: _List[object] = Array(items=String)
+        dog: Dog = Dog()
+        home_animal: _List[HomeAnimal] = Array(items=HomeAnimal)
 
-# noinspection PyStatementEffect
-class TestApiTypes(Types):
-    Person: _Type[Object] = Object(
-        description = "사람",
-        properties = Properties.make(
-            name = String(description='이름'),
-            age = Integer()
-        )
-    )
 
+zoo = Zoo()
+p = zoo.properties
+p.cats = ['abcd', 23]
 
 
 class TestApi(Api):
@@ -91,23 +101,19 @@ class TestApi(Api):
     protocols = ['HTTP', 'HTTPS']
     mediaType = 'application/json'
     documentation = [DocumentationHome, DocumentationLegal]
-    types = TestApiTypes
+    types = Types(Employee, Person, Dog, HomeAnimal, Zoo)
 
 
 print(
-    f'''#%RAML 1.0{
+    f'''#%RAML 1.0
+    {
     yaml.dump(
         TestApi.to_raml(),
-        default_flow_style=False, 
-        allow_unicode=True
+        default_flow_style=False,
+        allow_unicode=True,
+        sort_keys=False
     )
     }
     '''
 )
-a = TestApi()
-c = a.baseUriParameters
-t = TestApiTypes()
-d = TestApiTypes.Person()
-d.properties.name = 'abcd'
-t.Person = d.properties
 pass
