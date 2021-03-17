@@ -7,14 +7,14 @@ import logging
 from typing import (
     Type as _Type, List as _List,  # Dict as _Dict,
     Union as _Union, TypeVar as _TypeVar,
-    Generic as _Generic, Any as _Any, Callable as _Callable,
+    Any as _Any, Callable as _Callable,  # Generic as _Generic,
 )
 
 _T = _TypeVar('_T')
 
 ATTRS = '__raml_attrs__'
 ATTR_STORE = '__raml_attr_store__'
-ATTR_NAME= '__raml_attr_name__'
+ATTR_NAME = '__raml_attr_name__'
 VALUE = '__raml__value__'
 
 
@@ -36,7 +36,6 @@ class RamlMixin:
 
     def __set__(self, instance, value):
         pass
-
 
     @classmethod
     def to_raml(cls):
@@ -91,19 +90,18 @@ class RamlMetaClass(type):
 
     def __set__(self, instance, value):
         attr = self.__get_raml_attribute__(instance)
-        if hasattr(attr, '__set__'):
+        if not inspect.isclass(attr) and hasattr(attr, '__set__'):
             attr.__set__(instance, value)
 
     def __get_raml_attribute__(self, instance):
         attr = self
-        if instance :
+        if instance is not None:
             attr_name = getattr(self, ATTR_NAME)
             attr_store = getattr(instance, ATTR_STORE, {})
             attr = attr_store.get(attr_name, self())
             attr_store[attr_name] = attr
             setattr(instance, ATTR_STORE, attr_store)
         return attr
-
 
 
 class BaseRaml(RamlMixin, metaclass=RamlMetaClass):
@@ -132,7 +130,7 @@ class Xml(BaseRaml):
 
 
 class Properties(BaseRaml):
-    __allowed__: _Union[_List[_Type[BaseRaml]], _Type[BaseRaml], None] = None
+    __allowed__: _Union[_List[_Type[RamlMixin]], _Type[RamlMixin], None] = None
 
     def __init__(self, *args, **kwargs):
         self.__annotations__ = kwargs
@@ -148,14 +146,16 @@ class Properties(BaseRaml):
         return properties_class
 
     def __set__(self, instance, value):
-        if value is None: return
-        if inspect.isclass(value): return
+        if value is None:
+            return
+        if inspect.isclass(value):
+            return
 
         assert isinstance(value, (self.__class__, dict)), \
             f'({instance}, {value}) Value for {self.__class__} must be instance of {self.__class__} or dict.'
 
         value = value if isinstance(value, dict) else getattr(value, ATTR_STORE, {})
-        attrs:dict = getattr(self, ATTR_STORE, {})
+        attrs: dict = getattr(self, ATTR_STORE, {})
         attrs.update(value)
         setattr(self, ATTR_STORE, attrs)
 
@@ -163,6 +163,7 @@ class Properties(BaseRaml):
     def to_raml(cls):
         raml = super().to_raml()
         return raml if len(raml) else None
+
 
 class Facets(Properties):
     pass
@@ -172,8 +173,33 @@ class AnnotationTypes(Properties):
     pass
 
 
-class Types(Properties):
-        pass
+class Types(BaseRaml):
+    items: _List[_Type['Object']]
+
+    def __init__(self, *args: _Type['Object'], **kwargs):
+        items = list(getattr(self, 'items', []))
+        items.extend(args)
+        self.items = []
+
+        def append_item(obj):
+            for base in obj.__bases__:
+                if base == Object:
+                    continue
+                append_item(base)
+            if obj not in self.items:
+                self.items.append(obj)
+
+        for item in items:
+            append_item(item)
+
+        super().__init__(*args, **kwargs)
+
+    @classmethod
+    def to_raml(cls):
+        raml = {}
+        for item in cls.items:
+            raml[item.__name__] = item.to_raml()
+        return raml
 
 
 # noinspection PyPep8Naming
@@ -216,7 +242,6 @@ class TypeMixin(RamlMixin):
         kwargs['xml'] = xml
         super().__init__(*args, **kwargs)
 
-
     def __get__(self, instance, owner):
         value = getattr(self, VALUE, None)
         return value
@@ -224,18 +249,37 @@ class TypeMixin(RamlMixin):
     def __set__(self, instance, value):
         setattr(self, VALUE, value)
 
+    @classmethod
+    def __validate__(cls, value):
+        # todo : validation
+        pass
 
-TypeMixin = RamlMetaClass('TypeMixin', (TypeMixin, ), {'__annotations__': TypeMixin.__annotations__})
+    @classmethod
+    def to_raml(cls):
+        raml = super().to_raml()
+        if len(raml.keys()) == 1 and 'type' in raml:
+            raml = raml['type']
+        return raml
+
+
 Properties.__allowed__ = TypeMixin
 
 
+class Type(TypeMixin, metaclass=RamlMetaClass):
+    __annotations__ = dict(TypeMixin.__annotations__)
+
+
 # noinspection PyPep8Naming
-class Any(TypeMixin, metaclass=RamlMetaClass):
+class Any(Type, metaclass=RamlMetaClass):
     pass
 
 
 class ObjectMetaClass(RamlMetaClass):
     def __new__(mcs, name, bases, namespace):
+        annotations = dict(TypeMixin.__annotations__)
+        annotations.update(namespace.get('__annotations__', {}))
+        namespace['__annotations__'] = annotations
+
         type_ = []
         base_properties_attrs = []
         properties = namespace.get('properties', Properties)
@@ -247,7 +291,8 @@ class ObjectMetaClass(RamlMetaClass):
                 pass
 
             base_properties = getattr(base, 'properties', None)
-            if base_properties is None or base_properties in properties_bases: continue
+            if base_properties is None or base_properties in properties_bases:
+                continue
             properties_bases.insert(0, base_properties)
             base_properties_attrs.extend(getattr(base_properties, ATTRS, []))
 
@@ -258,14 +303,26 @@ class ObjectMetaClass(RamlMetaClass):
         properties_attrs = list(filter(lambda x: x not in base_properties_attrs, properties_attrs))
         setattr(properties, ATTRS, properties_attrs)
 
-        if type_: namespace['type'] = type_ if len(type_) > 1 else  type_[0]
-        namespace['properties'] = properties
-        return super().__new__(mcs, name, bases, namespace)
+        cls = super().__new__(mcs, name, bases, namespace)
+
+        # remove base attribute value
+        for base in bases:
+            for attr in getattr(base, ATTRS, []):
+                if attr in namespace:
+                    continue
+                else:
+                    setattr(cls, attr, None)
+
+        setattr(properties, ATTR_NAME, 'properties')
+        cls.properties = properties
+        if type_:
+            cls.type = type_ if len(type_) > 1 else type_[0]
+
+        return cls
 
 
 # noinspection PyPep8Naming
 class Object(TypeMixin, metaclass=ObjectMetaClass):
-
     type = 'object'
     properties: _Type[Properties]
     minProperties: object
@@ -298,17 +355,20 @@ class Object(TypeMixin, metaclass=ObjectMetaClass):
         return value
 
     def __set__(self, instance, value):
-        assert isinstance(value, (self.__class__, self.properties.__class__, dict)), \
-            f'Value for {self} must be instance of {self.__class__}, {self.properties.__class__} or dict.'
+        assert isinstance(value, (self.__class__, self.properties.__class__, dict)) or value is None, \
+            f'Value for {self} must be instance of {self.__class__}, {self.properties.__class__} or dict. ' \
+            f'({instance}, {value})'
 
         if isinstance(value, self.__class__):
             value = value.properties
+
+        # todo : if the value is instance of dict or None
 
         setattr(self, 'properties', value)
 
 
 # noinspection PyPep8Naming
-class Array(Any):
+class Array(Any, list):
     type = 'array'
     uniqueItems: bool
     items: _Type[TypeMixin]
@@ -328,6 +388,21 @@ class Array(Any):
         kwargs['minItems'] = minItems
         kwargs['maxItems'] = maxItems
         super().__init__(*args, **kwargs)
+
+    def __get__(self, instance, owner):
+        return self
+
+    def __set__(self, instance, value):
+        pass
+
+    def __str__(self):
+        return f'{self.__class__.__name__}{super().__str__()}'
+
+    def append(self, __object: _T) -> None:
+        super().append(__object)
+
+    def insert(self, __index: int, __object: _T) -> None:
+        super().insert(__index, __object)
 
 
 # noinspection PyPep8Naming
@@ -625,7 +700,7 @@ class Api(BaseRaml):
     protocols: _List[str]
     mediaType: _Union[_List[str], str]
     documentation: _List[_Type[DocumentationItem]]
-    types: _Type[Types]
+    types: _Union[_Type[Types], Types]
     traits: _Type[Traits]
     resourceTypes: object
     annotations: _List[_Type[TypeMixin]]
