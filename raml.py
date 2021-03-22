@@ -7,7 +7,7 @@ import yaml
 from os import linesep
 
 from typing import (
-    Type as _Type, List as _List,       # Dict as _Dict,
+    Type as _Type, List as _List, Dict as _Dict,
     Union as _Union, TypeVar as _TypeVar,
     Any as _Any, Callable as _Callable,  # Generic as _Generic,
 )
@@ -31,6 +31,10 @@ ATTR_NAME = '__raml_attr_name__'
 ORIGIN_CLASS = '__origin_class__'
 ORIGIN_PROPERTIES = '__origin_properties_class__'
 
+RAML_FILE = '__raml_file__'
+IMPORT_FILE = '__import_file__'
+EXPORT_FILE = '__export_file__'
+
 logging.basicConfig(level=logging.DEBUG)
 
 
@@ -45,27 +49,33 @@ def is_blank(obj):
 
 
 class RamlMixin:
+    __export_file__: str
+
     def __init__(self, *args, **kwargs):
         [kwargs.update(arg) for arg in args if isinstance(arg, dict)]
         for key, item in kwargs.items():
             setattr(self, key, item)
 
-    def __set_name__(self, owner, name):
-        namespace = self.__dict__
-        origin_class = self.__class__
-
-        namespace[ATTR_NAME] = name
-        namespace[IS_INSTANCE] = True
-        namespace[IS_ATTR] = True
-        attr_cls = RamlMetaClass(origin_class.__name__, (origin_class, ), namespace)
-        setattr(attr_cls, ORIGIN_CLASS, origin_class)
-        setattr(owner, name, attr_cls)
-
-    def __get__(self, instance, owner):
-        return self
-
-    def __set__(self, instance, value):
-        pass
+    # def __set_name__(self, owner, name):
+    #     setattr(self, ATTR_NAME, name)
+    #     setattr(self, IS_INSTANCE, True)
+    #     setattr(self, IS_ATTR, True)
+    #     setattr(owner, name, self)
+    #
+    #     namespace = self.__dict__
+    #     origin_class = self.__class__
+    #     namespace[ATTR_NAME] = name
+    #     namespace[IS_INSTANCE] = True
+    #     namespace[IS_ATTR] = True
+    #     attr_cls = RamlMetaClass(origin_class.__name__, (origin_class, ), namespace)
+    #     setattr(attr_cls, ORIGIN_CLASS, origin_class)
+    #     setattr(owner, name, attr_cls)
+    #
+    # def __get__(self, instance, owner):
+    #     return self
+    #
+    # def __set__(self, instance, value):
+    #     pass
 
     @classmethod
     def to_raml(cls):
@@ -76,7 +86,7 @@ class RamlMixin:
 
         for attr in attributes:
             value: _Union[_Type[_T], object] = getattr(cls, attr, None)
-            if is_raml(value):
+            if is_raml(value) or isinstance(value, RamlMixin):
                 value = value.to_raml()
             elif isinstance(value, list):
                 value = [v.to_raml() if is_raml(v) else v for v in value]
@@ -89,8 +99,12 @@ class RamlMixin:
     @classmethod
     def dump_raml(cls):
         raml = f'#%RAML 1.0{linesep}' \
-                f'---{linesep}' \
-                f'{yaml.dump(cls.to_raml(), default_flow_style=False, allow_unicode=True, sort_keys=False)}'
+               f'---{linesep}' \
+               f'{yaml.dump(cls.to_raml(), default_flow_style=False, allow_unicode=True)}'
+
+        # raml = f'#%RAML 1.0{linesep}' \
+        #         f'---{linesep}' \
+        #         f'{yaml.dump(cls.to_raml(), default_flow_style=False, allow_unicode=True, sort_keys=False)}'
         return raml
 
     @classmethod
@@ -100,7 +114,8 @@ class RamlMixin:
             file_path = filename if os.path.isabs(filename) else None
             file_path = file_path or os.path.join(root_path, filename)
             with open(os.path.abspath(file_path), 'r') as f:
-                raml = yaml.load(f, Loader=yaml.FullLoader)
+                # raml = yaml.load(f, Loader=yaml.FullLoader)
+                raml = yaml.load(f, Loader=yaml.Loader)
         return cls.load_raml(raml=raml)
 
     @classmethod
@@ -122,10 +137,19 @@ class RamlMixin:
         return raml_cls               # type: ignore
 
 
+    @classmethod
+    def export_raml(cls, filename=None):
+        filename = filename or getattr(cls, EXPORT_FILE)
+        raml = cls.dump_raml()
+        with open(os.path.abspath(filename), 'w') as f:
+            f.write(raml)
+
+        logging.debug(f'Export raml ({cls.__name__}): {filename}')
+
 class RamlMetaClass(type):
     def __new__(mcs, name, bases, namespace):
-        if '__raml_file__' in namespace:
-            bases = [base.load_raml_file(filename=namespace['__raml_file__']) for base in bases]
+        if RAML_FILE in namespace:
+            bases = [base.load_raml_file(filename=namespace[RAML_FILE]) for base in bases]
 
         attributes: list = list(namespace.get(ANNOTATIONS, {}))
         attributes = attributes.copy()
@@ -146,42 +170,44 @@ class RamlMetaClass(type):
 
     def __call__(cls, *args, **kwargs):
         obj = super().__call__(*args, **kwargs)
+        obj.__class__ = RamlMetaClass(obj.__class__.__name__, (obj.__class__, ), obj.__dict__)
+        setattr(obj.__class__, ORIGIN_CLASS, cls)
         return obj
 
-    def __set_name__(self, owner, name):
-        if issubclass(owner, getattr(self, OWNER, type('', (object, ), {}))) and name == getattr(self, ATTR_NAME, None):
-            cls = self
-        else:
-            namespace = dict()
-            namespace[ATTR_NAME] = name
-            namespace[IS_INSTANCE] = False
-            namespace[IS_ATTR] = True
-            cls = RamlMetaClass(self.__name__, (self, ), namespace)
-            setattr(cls, ORIGIN_CLASS, self)
-            setattr(cls, OWNER, owner)
-
-        setattr(owner, name, cls)
-
-    def __get__(self, instance, owner):
-        attr = self.__get_raml_attribute__(instance)
-        if not inspect.isclass(attr) and hasattr(attr, '__get__'):
-            attr = attr.__get__(instance, owner)
-        return attr
-
-    def __set__(self, instance, value):
-        attr = self.__get_raml_attribute__(instance)
-        if not inspect.isclass(attr) and hasattr(attr, '__set__'):
-            attr.__set__(instance, value)
-
-    def __get_raml_attribute__(self, instance):
-        attr = self
-        if instance is not None:
-            attr_name = getattr(self, ATTR_NAME)
-            attr_store = getattr(instance, ATTR_STORE, {})
-            attr = attr_store.get(attr_name, self())
-            attr_store[attr_name] = attr
-            setattr(instance, ATTR_STORE, attr_store)
-        return attr
+    # def __set_name__(self, owner, name):
+    #     if issubclass(owner, getattr(self, OWNER, type('', (object, ), {}))) and name == getattr(self, ATTR_NAME, None):
+    #         cls = self
+    #     else:
+    #         namespace = dict()
+    #         namespace[ATTR_NAME] = name
+    #         namespace[IS_INSTANCE] = False
+    #         namespace[IS_ATTR] = True
+    #         cls = RamlMetaClass(self.__name__, (self, ), namespace)
+    #         setattr(cls, ORIGIN_CLASS, self)
+    #         setattr(cls, OWNER, owner)
+    #
+    #     setattr(owner, name, cls)
+    #
+    # def __get__(self, instance, owner):
+    #     attr = self.__get_raml_attribute__(instance)
+    #     if not inspect.isclass(attr) and hasattr(attr, '__get__'):
+    #         attr = attr.__get__(instance, owner)
+    #     return attr
+    #
+    # def __set__(self, instance, value):
+    #     attr = self.__get_raml_attribute__(instance)
+    #     if not inspect.isclass(attr) and hasattr(attr, '__set__'):
+    #         attr.__set__(instance, value)
+    #
+    # def __get_raml_attribute__(self, instance):
+    #     attr = self
+    #     if instance is not None:
+    #         attr_name = getattr(self, ATTR_NAME)
+    #         attr_store = getattr(instance, ATTR_STORE, {})
+    #         attr = attr_store.get(attr_name, self())
+    #         attr_store[attr_name] = attr
+    #         setattr(instance, ATTR_STORE, attr_store)
+    #     return attr
 
 
 class BaseRaml(RamlMixin, metaclass=RamlMetaClass):
@@ -191,9 +217,27 @@ class BaseRaml(RamlMixin, metaclass=RamlMetaClass):
 class List(BaseRaml):
     items: _List[_Any]
 
-    def __init__(self, *args: _List[_Any], **kwargs):
-        self.items = args if len(args) > 1 else args[0] if len(args) else getattr(self, 'items', [])
+    def __init__(self, *args: _Union[_List[_Any], _Any], **kwargs):
+        if len(args) > 1:
+            self.items = args
+        elif len(args) == 1 and isinstance(args[0], list):
+            self.items = args[0]
+        elif len(args) == 1:
+            self.items = [args[0]]
+        else:
+            self.items = getattr(self, 'items', [])
         super().__init__(*args, **kwargs)
+
+    # def __set_name__(self, owner, name):
+    #     # super().__set_name__(owner, name)
+    #     attr_cls = getattr(owner, name)
+    #     items = list(attr_cls.items)
+    #     for index in range(len(items)):
+    #         item = attr_cls.items[index]
+    #         if not inspect.isclass(item):
+    #             item = RamlMetaClass(item.__class__.__name__, (item.__class__,), item.__dict__)
+    #             items[index] = item
+    #     attr_cls.items = items
 
     @classmethod
     def to_raml(cls):
@@ -209,11 +253,6 @@ class List(BaseRaml):
         return type(class_name or cls.__name__, (cls, ), namespace)
 
 
-def protocols_presenter(dumper, data):
-    return dumper.represent_sequence('tag:yaml.org,2002:seq', data.items, flow_style=True)
-
-
-yaml.add_representer(List, protocols_presenter)
 
 
 class Properties(BaseRaml):
@@ -223,21 +262,22 @@ class Properties(BaseRaml):
     def __init__(self, *args, **kwargs):
         [kwargs.update(arg) for arg in args if isinstance(arg, dict)]
         setattr(self, ANNOTATIONS, kwargs)
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
-    def __set__(self, instance, value):
-        if value is None:
-            return
-        if inspect.isclass(value):
-            return
 
-        assert isinstance(value, (self.__class__, dict)), \
-            f'({instance}, {value}) Value for {self.__class__} must be instance of {self.__class__} or dict.'
-
-        value = value if isinstance(value, dict) else getattr(value, ATTR_STORE, {})
-        attrs: dict = getattr(self, ATTR_STORE, {})
-        attrs.update(value)
-        setattr(self, ATTR_STORE, attrs)
+    # def __set__(self, instance, value):
+    #     if value is None:
+    #         return
+    #     if inspect.isclass(value):
+    #         return
+    #
+    #     assert not isinstance(value, (self.__class__, dict)), \
+    #         f'({instance}, {value}) Value for {self.__class__} must be instance of {self.__class__} or dict.'
+    #
+    #     value = value if isinstance(value, dict) else getattr(value, ATTR_STORE, {})
+    #     attrs: dict = getattr(self, ATTR_STORE, {})
+    #     attrs.update(value)
+    #     setattr(self, ATTR_STORE, attrs)
 
     @classmethod
     def to_raml(cls):
@@ -289,7 +329,7 @@ class Enum(List):
     @classmethod
     def to_raml(cls):
         items = getattr(cls, 'items', [])
-        raml = List(items) if len(items) else None
+        raml = tuple(items) if len(items) else None
         return raml
 
 
@@ -355,12 +395,12 @@ class TypeMixin(RamlMixin):
         kwargs['xml'] = xml or self.__class__.xml or Xml
         super().__init__(*args, **kwargs)
 
-    def __get__(self, instance, owner):
-        value = getattr(self, VALUE, None)
-        return value
-
-    def __set__(self, instance, value):
-        setattr(self, VALUE, value)
+    # def __get__(self, instance, owner):
+    #     value = getattr(self, VALUE, None)
+    #     return value
+    #
+    # def __set__(self, instance, value):
+    #     setattr(self, VALUE, value)
 
     @classmethod
     def __validate__(cls, value):
@@ -482,21 +522,21 @@ class Object(TypeMixin, metaclass=ObjectMetaClass):
         kwargs['discriminatorValue'] = discriminatorValue
         super().__init__(*args, **kwargs)
 
-    def __get__(self, instance, owner):
-        value = getattr(self, 'properties', None)
-        return value
-
-    def __set__(self, instance, value):
-        assert isinstance(value, (self.__class__, self.properties.__class__, dict)) or value is None, \
-            f'Value for {self} must be instance of {self.__class__}, {self.properties.__class__} or dict. ' \
-            f'({instance}, {value})'
-
-        if isinstance(value, self.__class__):
-            value = value.properties
-
-        # todo : if the value is instance of dict or None
-
-        setattr(self, 'properties', value)
+    # def __get__(self, instance, owner):
+    #     value = getattr(self, 'properties', None)
+    #     return value
+    #
+    # def __set__(self, instance, value):
+    #     assert isinstance(value, (self.__class__, self.properties.__class__, dict)) or value is None, \
+    #         f'Value for {self} must be instance of {self.__class__}, {self.properties.__class__} or dict. ' \
+    #         f'({instance}, {value})'
+    #
+    #     if isinstance(value, self.__class__):
+    #         value = value.properties
+    #
+    #     # todo : if the value is instance of dict or None
+    #
+    #     setattr(self, 'properties', value)
 
     @classmethod
     def to_raml(cls):
@@ -735,7 +775,7 @@ class Header(Properties):
     pass
 
 
-class QueryParameter(Properties):
+class QueryParameter(UriParameters):
     pass
 
 
@@ -783,21 +823,21 @@ class Method(BaseRaml):
             self, *args,
             displayName: str = None,
             description: str = None,
-            annotations: _List[_Type[TypeMixin]] = None,
-            queryParameters: _Type[QueryParameter] = None,
-            headers: _Type[Header] = None,
-            queryString: _Type[Object] = None,
-            response: _Type[Response] = None,
-            body: _Type[Body] = None,
+            annotations: _List[TypeMixin] = None,
+            queryParameters: QueryParameter = None,
+            headers: Header = None,
+            queryString: Object = None,
+            response: Response = None,
+            body: Body = None,
             protocols: _List[str] = None,
-            is_: _Type['Method'] = None,
+            is_: 'Method' = None,
             securedBy: str = None,
             **kwargs
     ):
         kwargs['displayName'] = displayName
         kwargs['description'] = description
         kwargs['annotations'] = annotations
-        kwargs['queryParameters'] = queryParameters or getattr(self.__class__, 'queryParameters', UriParameters)
+        kwargs['queryParameters'] = queryParameters or getattr(self.__class__, 'queryParameters', QueryParameter)
         kwargs['headers'] = headers or getattr(self.__class__, 'header', Header)
         kwargs['queryString'] = queryString
         kwargs['response'] = response
@@ -833,13 +873,13 @@ class Resource(BaseRaml):
             displayName: str = None,
             description: str = None,
             annotations: _List[_Type[TypeMixin]] = None,
-            get: _Type[Method] = None,
-            patch: _Type[Method] = None,
-            put: _Type[Method] = None,
-            post: _Type[Method] = None,
-            delete: _Type[Method] = None,
-            options: _Type[Method] = None,
-            head: _Type[Method] = None,
+            get: Method = None,
+            patch: Method = None,
+            put: Method = None,
+            post: Method = None,
+            delete: Method = None,
+            options: Method = None,
+            head: Method = None,
             resources: _List[_Type['Resource']] = None,
             **kwargs
     ):
@@ -857,38 +897,54 @@ class Resource(BaseRaml):
         kwargs['resources'] = resources
         super().__init__(*args, **kwargs)
 
-
-class Resources(List):
-    items: _List[_Type[Resource]]           # type: ignore
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        uris = {}
-        for resource in self.items:
-            # check uri
-            if resource.uri in uris:
-                already_resource = uris[resource.uri]
-                raise KeyError(
-                    f'\'{resource.uri}\' of {resource.__qualname__} '
-                    f'is already been used at {already_resource.__qualname__}'
-                )
-            elif len(resource.uri) < 2:
-                raise NameError(f'Uri of {resource.__qualname__} is too short.')
-            elif resource.uri[0] != '/':
-                raise NameError(f'Uri of {resource.__qualname__} should begins with slash(/).')
-            else:
-                uris[resource.uri] = resource
-
-        self.__uris__ = uris
-
     @classmethod
     def to_raml(cls):
         raml = super().to_raml()
-        for k in list(raml.keys()):
-            resource = raml.pop(k)
-            uri = resource.pop('uri')
-            raml[uri] = resource
+        raml.pop('uri')
+        resources: dict = raml.pop('resources', {})
+        if resources:
+            raml.update(resources)
         return raml
+
+class Dict(BaseRaml):
+    __items__: _Dict[str, _Any] = {}
+
+    def __init__(self, *args, **kwargs):
+        items = self.__items__.copy()
+
+        if len(args) == 1 and isinstance(args[0], dict):
+            kwargs = kwargs.update(args[0])
+        elif len(args) == 1 and isinstance(args[0], Dict):
+            kwargs = kwargs.update(args[0].__items__)
+        items.update(kwargs)
+
+        annotations = {}
+        attrs = []
+        for k, v in items.items():
+            v = v if inspect.isclass(v) else v.__class__
+            annotations[k] = _Type[v]
+            attrs.append(k)
+
+        self.__items__ =  items
+        setattr(self, ATTRS, attrs)
+        setattr(self, ANNOTATIONS, annotations)
+        super().__init__(**items)
+
+class Resources(Dict):
+
+    def __init__(self, *args, **kwargs):
+        for resource in args:
+            if resource.uri in kwargs:
+                continue
+            kwargs[resource.uri] = resource
+        super().__init__(*args, **kwargs)
+
+        for uri, resource in self.__items__.items():
+            if len(uri) < 2:
+                raise NameError(f'Uri of {resource.__qualname__} is too short.')
+            elif uri[0] != '/':
+                raise NameError(f'Uri of {resource.__qualname__} should begins with slash(/).')
+
 
 
 class Trait(Method):
@@ -914,10 +970,6 @@ class Traits(Properties):
 Traits.__allowed__ = Trait
 
 
-# load from raml file
-class Uses(Properties):
-    # __allowed__ = [Types, 'ResourceTypes', Traits, 'SecuritySchemes', AnnotationTypes, ]
-    __allowed__ = [Types, Traits, AnnotationTypes, ]
 
 
 class Api(BaseRaml):
@@ -929,13 +981,13 @@ class Api(BaseRaml):
     protocols: _Type[Protocols]
     mediaType: _Type[MediaType]
     documentation: _List[_Type[Documentation]]
+    uses: _Type['Uses']
     types: _Union[_Type[Types], Types]
     traits: _Type[Traits]
     resourceTypes: object
     annotations: _List[_Type[TypeMixin]]
     securitySchemes: object
     securedBy: object
-    uses: _Type[Uses]
     resources: _List[Resource]
     extends: str
 
@@ -948,8 +1000,31 @@ class Api(BaseRaml):
         return raml
 
 
+
+# load from raml file
+class Uses(Properties):
+    # __allowed__ = [Types, 'ResourceTypes', Traits, 'SecuritySchemes', AnnotationTypes, ]
+    __allowed__ = [Types, Traits, AnnotationTypes, ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __set_name__(self, owner, name):
+        path = getattr(owner, RAML_FILE, None)
+        if path is None:
+            raise AttributeError(f'\'{RAML_FILE}\' is not specified for \'{owner}\'.')
+        path = os.path.dirname(path)
+
+        for attr in getattr(self, ATTRS):
+            filename = os.path.join(path, getattr(self, attr))
+            if not os.path.isfile(filename):
+                raise FileNotFoundError(f'\'{filename}\' file could not be found.')
+
+
 def str_presenter(dumper, data):
+    data = data.strip()
     if len(data.splitlines()) > 1:  # check for multiline string
+        data = re.sub(f'{os.linesep}\s+', os.linesep, data)
         return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
     return dumper.represent_scalar('tag:yaml.org,2002:str', data)
 
@@ -958,7 +1033,6 @@ yaml.add_representer(str, str_presenter)
 
 
 def tuple_presenter(dumper, data):
-    return dumper.represent_sequence('tag:yaml.org,2002:seq', list(data), flow_style=True)
-
+    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
 
 yaml.add_representer(tuple, tuple_presenter)
