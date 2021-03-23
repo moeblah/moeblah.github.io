@@ -23,8 +23,10 @@ RAML_ATTRS = '__raml_attrs__'
 RAML_ATTR_NAMES = '__raml_attr_names__'
 RAML_VALUE = '__raml__value__'
 
+
 IS_INSTANCE = '__is_instance__'
 IS_ATTR = '__is_attr__'
+IS_SINGLE_OBJECT = '__is_single_object__'
 ATTR_NAME = '__attr_name__'
 ATTR_STORE = '__attr_store__'
 
@@ -421,6 +423,12 @@ class ObjectMetaClass(RamlMetaClass):
         annotation.update(namespace.get(ANNOTATIONS, {}))
         namespace[ANNOTATIONS] = annotation
 
+        try:
+            if bases[0] is Object and name.split('.')[-1] == 'Object':
+                namespace[IS_SINGLE_OBJECT] = True
+        except NameError:
+            pass
+
         if not namespace.get(IS_INSTANCE, False) and not namespace.get(IS_ATTR, False):
             properties = []
             properties_namespace = {}
@@ -481,13 +489,14 @@ class Object(TypeMixin, metaclass=ObjectMetaClass):
         kwargs['additionalProperties'] = additionalProperties
         kwargs['discriminator'] = discriminator
         kwargs['discriminatorValue'] = discriminatorValue
+
         super().__init__(*args, **kwargs)
 
     @classmethod
     def __raml_dict__(cls):
 
         parents = getattr(cls, PARENTS, None)
-        if parents is None or issubclass(parents, Types):
+        if parents is None or issubclass(parents, Types) or getattr(cls, IS_SINGLE_OBJECT, False):
             raml = super().__raml_dict__()
         else:
             raml = cls.__name__
