@@ -9,7 +9,7 @@ from os import linesep
 from typing import (
     Type as _Type, List as _List, Dict as _Dict,
     Union as _Union, TypeVar as _TypeVar,
-    Any as _Any, Callable as _Callable,
+    Any as _Any
 )
 
 
@@ -55,40 +55,53 @@ def is_blank(obj):
 
 class RamlMixin:
     __export_file__: str
-    __raml_attr_names__ = {}
+    __raml_attr_names__: _Dict[str, str] = {}
     __parents__ = None
-    __children__ = {}
+    __children__: _Dict[str, _Type['RamlMixin']] = {}
 
     def __init__(self, *args, **kwargs):
         self.__children__ = self.__children__.copy()
 
         for k, v in kwargs.items():
-            kwargs[k] = v or getattr(self, k, None)
-        # [kwargs.update(arg) for arg in args if isinstance(arg, dict)]
+            kwargs[k] = v if v is not None else getattr(self, k, None)
         for key, item in kwargs.items():
             setattr(self, key, item)
 
     def __set_name__(self, owner, name):
-        owner.__children__[name] = self.__class__
+        owner_children = getattr(owner, CHILDREN, {})
+        owner_children[name] = self.__class__
+        setattr(owner, CHILDREN, owner_children)
         setattr(self.__class__, PARENTS, owner)
         setattr(self.__class__, ATTR_NAME, name)
         setattr(self.__class__, IS_ATTR, True)
         setattr(owner, name, self.__class__)
 
+    @classmethod
+    def __get_attr_type__(cls, attr):
+        return cls.__annotations__[attr]
+
+    @classmethod
+    def __is_raml__(cls, value):
+        is_raml = not (
+                not (inspect.isclass(value) and issubclass(value, RamlMixin)) and not isinstance(value, RamlMixin)
+        )
+        return is_raml
 
     @classmethod
     def __raml_dict__(cls):
         raml = {}
-        attributes: list = getattr(cls, RAML_ATTRS, [])
+        attrs: list = getattr(cls, RAML_ATTRS, [])
 
-        is_raml: _Callable[[_Any], bool] = lambda x: inspect.isclass(x) and issubclass(x, RamlMixin)
-
-        for attr in attributes:
+        for attr in attrs:
             value: _Union[_Type[_T], object] = getattr(cls, attr, None)
-            if is_raml(value) or isinstance(value, RamlMixin):
+
+            if cls.__is_raml__(value):
                 value = value.__raml_dict__()
             elif isinstance(value, list):
-                value = [v.__raml_dict__() if is_raml(v) else v for v in value]
+                value = [v.__raml_dict__() if cls.__is_raml__(v) else v for v in value]
+            elif isinstance(value, dict):
+                for k, v in value.items():
+                    value[k] = v.__raml_dict__() if cls.__is_raml__(v) else v
             if isinstance(value, (list, dict)) and len(value) == 0:
                 value = None
             if value is not None:
@@ -98,15 +111,15 @@ class RamlMixin:
 
     @classmethod
     def __raml_yaml__(cls):
+        # raml = f'#%RAML 1.0{linesep}' \
+        #        f'---{linesep}' \
+        #        f'{yaml.dump(cls.__raml_dict__(), default_flow_style=False, allow_unicode=True)}'
+
+        raml_dict = cls.__raml_dict__()
         raml = f'#%RAML 1.0{linesep}' \
                f'---{linesep}' \
-               f'{yaml.dump(cls.__raml_dict__(), default_flow_style=False, allow_unicode=True)}'
-
-        # raml = f'#%RAML 1.0{linesep}' \
-        #         f'---{linesep}' \
-        #         f'{yaml.dump(cls.__raml_dict__(), default_flow_style=False, allow_unicode=True, sort_keys=False)}'
+               f'{yaml.dump(raml_dict, default_flow_style=False, allow_unicode=True, sort_keys=False)}'
         return raml
-
 
     @classmethod
     def load_raml_file(cls, filename):
@@ -140,7 +153,7 @@ class RamlMixin:
     @classmethod
     def export_raml(cls, filename=None):
         filename = filename or getattr(cls, EXPORT_FILE)
-        raml = cls.dump_raml()
+        raml = cls.__raml_yaml__()
         with open(os.path.abspath(filename), 'w') as f:
             f.write(raml)
 
@@ -164,24 +177,26 @@ class RamlMetaClass(type):
 
         attrs = list(filter(lambda x: not re.match('__.+__', x), attrs))
         namespace[RAML_ATTRS] = attrs
-        namespace[IS_INSTANCE] = False
         new_class = super().__new__(mcs, name, tuple(bases), namespace)
         return new_class
-
-    def __init__(cls, name, bases, namespace):
-        super().__init__(name, bases, namespace)
 
     def __call__(cls, *args, **kwargs):
         obj = super().__call__(*args, **kwargs)
         setattr(obj, IS_INSTANCE, True)
         setattr(obj.__class__, ORIGIN_CLASS, cls)
-        obj.__class__ = RamlMetaClass(f'instance.{obj.__class__.__name__}', (obj.__class__, ), obj.__dict__)
+        qualname = f'instance.{obj.__class__.__name__}'
+        obj.__class__ = RamlMetaClass(qualname, (obj.__class__, ), obj.__dict__)
+        obj.__class__.__name__ = cls.__name__
         return obj
 
     def __set_name__(self, owner, name):
-        attr_class = RamlMetaClass(f'instance.{self.__name__}', (self, ), {})
+        namespace = {ATTR_NAME: name, IS_ATTR: True}
+
+        qualname = f'{owner.__name__}.name.{self.__name__}'
+        attr_class = RamlMetaClass(qualname, (self, ), namespace)
+        attr_class.__name__ = self.__name__
         setattr(attr_class, PARENTS, owner)
-        setattr(attr_class, ATTR_NAME, name)
+        setattr(owner, name, attr_class)
 
 
 class BaseRaml(RamlMixin, metaclass=RamlMetaClass):
@@ -247,7 +262,7 @@ class Properties(BaseRaml):
 
     def __init__(self, *args, **kwargs):
         [kwargs.update(arg) for arg in args if isinstance(arg, dict)]
-        annotations = getattr(self, ANNOTATIONS, {})
+        annotations = dict(getattr(self, ANNOTATIONS, {}))
         for k, v in kwargs.items():
             annotations[k] = _Type[v] if inspect.isclass(v) else _Type[v.__class__]
         setattr(self, ANNOTATIONS, annotations)
@@ -290,7 +305,7 @@ class Properties(BaseRaml):
                 namespace[attr] = attr_cls
 
             types[attr] = attr_cls
-            annotation[attr] = _Type[attr_cls]
+            annotation[attr] = attr_cls
 
         namespace[ANNOTATIONS] = annotation
         raml_cls = type(cls.__name__, (cls, ), namespace)
@@ -332,44 +347,48 @@ class Facets(Properties):
     pass
 
 
+class Annotations:
+    pass
+
+
 # noinspection PyPep8Naming
 class TypeMixin(RamlMixin):
-    annotations: _List[_Type['TypeMixin']]
+    annotations: Annotations
     type: str
     displayName: str
     description: str
-    enum: _Type[Enum] = Enum
-    facets: _Type[Facets] = Facets
+    enum: Enum
+    facets: Facets
     default: object
     example: object
     examples: object
-    xml: _Type[Xml] = Xml
+    xml: Xml
 
+    # noinspection PyUnusedLocal
     def __init__(
             self, *args,
             type_: str = None,
-            annotations: _List[_Type['TypeMixin']] = None,
+            annotations: Annotations = None,
             displayName: str = None,
             description: str = None,
-            enum: _List[object] = None,
-            facets: _Type[Facets] = None,
+            enum: Enum = None,
+            facets: Facets = None,
             default: object = None,
             example: object = None,
             examples: object = None,
-            xml: _Type[Xml] = None,
+            xml: Xml = None,
             **kwargs
     ):
-
-        kwargs['type'] = getattr(self.__class__, 'type',  type_)
+        kwargs['type'] = kwargs.get('type', getattr(self, 'type',  type_))
         kwargs['annotations'] = annotations
         kwargs['displayName'] = displayName
         kwargs['description'] = description
-        kwargs['enum'] = enum or self.__class__.enum or Enum
-        kwargs['facets'] = facets or self.__class__.facets or Facets
+        kwargs['enum'] = enum
+        kwargs['facets'] = facets
         kwargs['default'] = default
         kwargs['example'] = example
         kwargs['examples'] = examples
-        kwargs['xml'] = xml or self.__class__.xml or Xml
+        kwargs['xml'] = xml
         super().__init__(*args, **kwargs)
 
     def __validate__(self, value):
@@ -396,11 +415,49 @@ class Any(BaseType):
     type = 'any'
 
 
+class ObjectMetaClass(RamlMetaClass):
+    def __new__(mcs, name, bases, namespace):
+        annotation = dict(getattr(TypeMixin, ANNOTATIONS, {}))
+        annotation.update(namespace.get(ANNOTATIONS, {}))
+        namespace[ANNOTATIONS] = annotation
+
+        if not namespace.get(IS_INSTANCE, False) and not namespace.get(IS_ATTR, False):
+            properties = []
+            properties_namespace = {}
+            if 'Properties' in namespace.keys():
+                properties_namespace[ANNOTATIONS] = getattr(namespace['Properties'], ANNOTATIONS)
+                properties.append(namespace['Properties'])
+
+            type_name = []
+            for base in bases:
+                try:
+                    if base is Object:
+                        type_name.append(base.type)
+                    elif issubclass(base, Object):
+                        type_name.append(base.__name__)
+                except NameError:
+                    pass
+
+                if hasattr(base, 'Properties'):
+                    properties.append(base.Properties)
+
+            if 'properties' in namespace.keys():
+                properties.append(namespace['properties'].__class__)
+            else:
+                properties.append(Properties)
+            properties_class = RamlMetaClass(f'Properties', tuple(properties), properties_namespace)
+            namespace['properties'] = properties_class
+
+            if type_name:
+                namespace['type'] = Enum(type_name) if len(type_name) > 1 else type_name[0]
+
+        return super().__new__(mcs, name, bases, namespace)
+
 
 # noinspection PyPep8Naming
-class Object(BaseType):
+class Object(TypeMixin, metaclass=ObjectMetaClass):
     type = 'object'
-    properties: _Type[Properties] = Properties
+    properties: Properties
     minProperties: object
     maxProperties: object
     additionalProperties: bool  # default true
@@ -418,8 +475,7 @@ class Object(BaseType):
             discriminatorValue: str = None,
             **kwargs
     ):
-        properties = properties or self.__class__.properties or Properties
-        kwargs['properties'] = properties or self.__class__.properties or Properties
+        kwargs['properties'] = properties
         kwargs['minProperties'] = minProperties
         kwargs['maxProperties'] = maxProperties
         kwargs['additionalProperties'] = additionalProperties
@@ -429,10 +485,12 @@ class Object(BaseType):
 
     @classmethod
     def __raml_dict__(cls):
-        if getattr(cls, IS_INSTANCE, False) and getattr(cls, ORIGIN_CLASS) is not Object:
-            return cls.__name__
-        else:
+
+        parents = getattr(cls, PARENTS, None)
+        if parents is None or issubclass(parents, Types):
             raml = super().__raml_dict__()
+        else:
+            raml = cls.__name__
         return raml
 
 
@@ -571,13 +629,13 @@ class TimeOnly(Datetime):
 # noinspection PyPep8Naming
 class File(BaseType):
     type = 'file'
-    fileTypes: _List[str]
+    fileTypes: Enum
     minLength: int  # default = 0
     maxLength: int  # default = 2147483647
 
     def __init__(
             self, *args,
-            fileTypes: _List[str] = None,
+            fileTypes: Enum = None,
             minLength: int = None,
             maxLength: int = None,
             **kwargs
@@ -603,49 +661,46 @@ Properties.__types__['datetime'] = Datetime
 Properties.__types__['file'] = File
 
 
-class Types(List):
-    items: _List[_Type[Object]]                 # type: ignore
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        items = []
+class Types(Properties):
+    def __init__(self, *args):
+        types = {}
 
         def append_children(cls):
-            if not inspect.isclass(cls) or not issubclass(cls, Object):
+            if not inspect.isclass(cls) or not issubclass(cls, RamlMixin):
                 return
-            for child in getattr(cls.properties, RAML_ATTRS, []):
-                child = getattr(cls.properties, child, None)
-                if inspect.isclass(child) and issubclass(child, Object):
-                    append_item(child)
-                elif isinstance(child, Object):
-                    append_item(getattr(child, ORIGIN_CLASS))
 
-        def append_item(obj):
-            if isinstance(obj, Object):
-                cls = getattr(obj, ORIGIN_CLASS)
-            else:
-                cls = obj
+            for child in getattr(cls, RAML_ATTRS, []):
+                child = getattr(cls, child, None)
+                append_item(child)
 
-            if not inspect.isclass(cls) or not issubclass(cls, Object):
+        def append_item(cls):
+            if not inspect.isclass(cls) or not issubclass(cls, RamlMixin):
                 return
 
             mro = list(cls.__mro__)
             mro.reverse()
             for base in mro:
-                if not issubclass(base, Object) or base is Object:
+                if not issubclass(base, RamlMixin) or base is RamlMixin:
                     continue
-                if getattr(base, IS_INSTANCE, False):
-                    continue
-                if base in items:
+                if base in types.values():
                     continue
                 append_children(base)
-                items.append(base)
 
-        for item in self.items:
-            append_item(item)
+                if not issubclass(base, Object) or base is Object:
+                    continue
+                if getattr(base, IS_INSTANCE, False) or getattr(base, IS_ATTR, False):
+                    continue
 
-        self.items = items
+                types[base.__name__] = base
+
+        for arg in args:
+            append_item(arg)
+
+        super().__init__(**types)
+
+    @classmethod
+    def append(cls):
+        pass
 
 
 class AnnotationTypes(Properties):
@@ -666,17 +721,22 @@ class QueryParameter(UriParameters):
 
 
 class Body(BaseRaml):
-    json: _Type[Object]
-    xml: _Type[Object]
+    json: Object
+    xml: Object
 
     __raml_attr_names__ = {
         'json': 'application/json',
         'xml': 'text/xml'
     }
 
-    def __init__(self, *args, json:_Dict[str, _Any]= None, xml:_Dict[str, _Any]= None, **kwargs):
+    def __init__(
+            self, *args,
+            json: _Dict[str, _Any] = None,
+            xml: _Dict[str, _Any] = None,
+            **kwargs
+    ):
         kwargs['json'] = Object(type=None, properties=Properties(json)) if json else None
-        kwargs['xml'] = Object(type=None, properties=Properties(result=xml)) if xml else None
+        kwargs['xml'] = Object(type=None, properties=Properties(xml)) if xml else None
         super().__init__(*args, **kwargs)
 
 
@@ -684,17 +744,18 @@ class Responses(Properties):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+
 # noinspection PyPep8Naming
 class Response(BaseRaml):
     description: str
-    annotations: _List[_Type[TypeMixin]]
-    headers: _Type[Header]
-    body: _Type[Body]
+    annotations:  Annotations
+    headers: Header
+    body: Body
 
     def __init__(
             self, *args,
             description: str = None,
-            annotations: _List[_Type[TypeMixin]] = None,
+            annotations: Annotations = None,
             headers: Header = None,
             body: Body = None,
             **kwargs
@@ -710,14 +771,14 @@ class Response(BaseRaml):
 class Method(BaseRaml):
     displayName: str
     description: str
-    annotations: _List[_Type[TypeMixin]]
-    queryParameters: _Type[QueryParameter] = QueryParameter
-    headers: _Type[Header] = Header
-    queryString: _Type[Object]  # The queryString and queryParameters nodes are mutually exclusive.
-    responses: _Type[Responses]
-    body: _Type[Body]
-    protocols: _Type[Protocols]
-    is_: _Type['Method']
+    annotations: Annotations
+    queryParameters: QueryParameter
+    headers: Header
+    queryString: Object  # The queryString and queryParameters nodes are mutually exclusive.
+    responses: Responses
+    body: Body
+    protocols: Protocols
+    is_: Enum
     securedBy: str
 
     __raml_attr_names__ = {'is_': 'is'}
@@ -726,13 +787,13 @@ class Method(BaseRaml):
             self, *args,
             displayName: str = None,
             description: str = None,
-            annotations: _List[TypeMixin] = None,
+            annotations: Annotations = None,
             queryParameters: QueryParameter = None,
             headers: Header = None,
             queryString: Object = None,
             responses: Responses = None,
             body: Body = None,
-            protocols: _List[str] = None,
+            protocols: Protocols = None,
             is_: Enum = None,
             securedBy: str = None,
             **kwargs
@@ -740,42 +801,60 @@ class Method(BaseRaml):
         kwargs['displayName'] = displayName
         kwargs['description'] = description
         kwargs['annotations'] = annotations
-        kwargs['queryParameters'] = queryParameters or getattr(self.__class__, 'queryParameters', QueryParameter)
-        kwargs['headers'] = headers or getattr(self.__class__, 'header', Header)
+        kwargs['queryParameters'] = queryParameters
+        kwargs['headers'] = headers
         kwargs['queryString'] = queryString
         kwargs['responses'] = responses
         kwargs['body'] = body
-        kwargs['protocols'] = protocols or Protocols
+        kwargs['protocols'] = protocols
         kwargs['is_'] = is_
         kwargs['securedBy'] = securedBy
         super().__init__(*args, **kwargs)
 
 
+class SecuredBy(BaseRaml):
+    pass
+
+
+class Resources(Properties):
+    def __init__(self, *args, **kwargs):
+        for resource in args:
+            if resource.uri in kwargs:
+                continue
+            kwargs[resource.uri] = resource
+
+        for uri, resource in kwargs.items():
+            if len(uri) < 2:
+                raise NameError(f'Uri of {resource.__qualname__} is too short.')
+            elif uri[0] != '/':
+                raise NameError(f'Uri of {resource.__qualname__} should begins with slash(/).')
+
+        super().__init__(*args, **kwargs)
+
+
 # noinspection PyPep8Naming
 class Resource(BaseRaml):
-    uri: _Union[_List[str], str]
+    uri: str
     displayName: str
     description: str
-    annotations: _List[_Type[TypeMixin]]
-    is_: _Type[Enum]
-    uriParameters: _Type[UriParameters]
-    get: _Type[Method]
-    patch: _Type[Method]
-    put: _Type[Method]
-    post: _Type[Method]
-    delete: _Type[Method]
-    options: _Type[Method]
-    head: _Type[Method]
-    type: _Type[TypeMixin]
-    securedBy: _Any
-    resources: _Type['Resources']
-
+    annotations: Annotations
+    is_: Enum
+    uriParameters: UriParameters
+    get: Method
+    patch: Method
+    put: Method
+    post: Method
+    delete: Method
+    options: Method
+    head: Method
+    type: TypeMixin
+    securedBy: SecuredBy
+    resources: Resources
     __raml_attr_names__ = {'is_': 'is'}
-
 
     def __init__(
             self, *args,
-            uris: _Union[_List[str], str] = None,
+            uri: str = None,
             displayName: str = None,
             description: str = None,
             annotations: _List[_Type[TypeMixin]] = None,
@@ -787,10 +866,10 @@ class Resource(BaseRaml):
             options: Method = None,
             head: Method = None,
             is_: Enum = None,
-            resources: 'Resources' = None,
+            resources: Resources = None,
             **kwargs
     ):
-        kwargs['uris'] = uris
+        kwargs['uri'] = uri
         kwargs['displayName'] = displayName
         kwargs['description'] = description
         kwargs['annotations'] = annotations
@@ -813,24 +892,6 @@ class Resource(BaseRaml):
         if resources:
             raml.update(resources)
         return raml
-
-
-class Resources(Properties):
-
-    def __init__(self, *args, **kwargs):
-        for resource in args:
-            if resource.uri in kwargs:
-                continue
-            kwargs[resource.uri] = resource
-
-        for uri, resource in kwargs.items():
-            if len(uri) < 2:
-                raise NameError(f'Uri of {resource.__qualname__} is too short.')
-            elif uri[0] != '/':
-                raise NameError(f'Uri of {resource.__qualname__} should begins with slash(/).')
-
-        super().__init__(*args, **kwargs)
-
 
 
 class Trait(Method):
@@ -856,39 +917,8 @@ class Traits(Properties):
 Traits.__allowed__ = Trait
 
 
-class Api(BaseRaml):
-    title: str
-    description: str
-    version: str
-    baseUri: str
-    baseUriParameters: _Type[UriParameters]
-    protocols: _Type[Protocols]
-    mediaType: _Type[MediaType]
-    documentation: _List[_Type[Documentation]]
-    uses: _Type['Uses']
-    types: _Union[_Type[Types], Types]
-    traits: _Type[Traits]
-    resourceTypes: object
-    annotations: _List[_Type[TypeMixin]]
-    securitySchemes: object
-    securedBy: object
-    resources: _List[Resource]
-    extends: str
-
-    @classmethod
-    def __raml_dict__(cls):
-        raml = super().__raml_dict__()
-        resources: dict = raml.pop('resources', {})
-        if resources:
-            raml.update(resources)
-        return raml
-
-
 # load from raml file
 class Uses(Properties):
-    # __allowed__ = [Types, 'ResourceTypes', Traits, 'SecuritySchemes', AnnotationTypes, ]
-    __allowed__ = [Types, Traits, AnnotationTypes, ]
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -904,10 +934,38 @@ class Uses(Properties):
     #             raise FileNotFoundError(f'\'{filename}\' file could not be found.')
 
 
+class Api(BaseRaml):
+    title: str
+    description: str
+    version: str
+    baseUri: str
+    baseUriParameters: UriParameters
+    protocols: Protocols
+    mediaType: MediaType
+    documentation: Documentation
+    uses: Uses
+    types: Types
+    traits: Traits
+    resourceTypes: object
+    annotations: Annotations
+    securitySchemes: object
+    securedBy: object
+    resources: Resources
+    extends: str
+
+    @classmethod
+    def __raml_dict__(cls):
+        raml = super().__raml_dict__()
+        resources: dict = raml.pop('resources', {})
+        if resources:
+            raml.update(resources)
+        return raml
+
+
 def str_presenter(dumper, data):
     data = data.strip()
     if len(data.splitlines()) > 1:  # check for multiline string
-        data = f'{os.linesep}'.join([re.sub('(^(\s{4})+)|(\s+$)', '', s) for s in data.split(os.linesep)])
+        data = f'{os.linesep}'.join([re.sub("(^(\\s{4})+)|(\\s+$)", '', s) for s in data.split(os.linesep)])
         return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
     return dumper.represent_scalar('tag:yaml.org,2002:str', data)
 
