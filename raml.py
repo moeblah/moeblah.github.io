@@ -425,7 +425,7 @@ class ObjectMetaClass(RamlMetaClass):
             properties = []
             properties_namespace = {}
             if 'Properties' in namespace.keys():
-                properties_namespace[ANNOTATIONS] = getattr(namespace['Properties'], ANNOTATIONS)
+                properties_namespace[ANNOTATIONS] = getattr(namespace['Properties'], ANNOTATIONS, {})
                 properties.append(namespace['Properties'])
 
             type_name = []
