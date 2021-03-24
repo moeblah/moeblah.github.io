@@ -27,6 +27,7 @@ RAML_VALUE = '__raml__value__'
 IS_INSTANCE = '__is_instance__'
 IS_ATTR = '__is_attr__'
 IS_SINGLE_OBJECT = '__is_single_object__'
+IS_DYNAMIC_OBJECT= '__is_dynamic_object__'
 ATTR_NAME = '__attr_name__'
 ATTR_STORE = '__attr_store__'
 
@@ -34,8 +35,8 @@ ATTR_STORE = '__attr_store__'
 ORIGIN_CLASS = '__origin_class__'
 ORIGIN_PROPERTIES = '__origin_properties_class__'
 
-RAML_FILE = '__raml_file__'
-EXPORT_FILE = '__export_file__'
+RAML_FILE = '__raml_filename__'
+EXPORT_FILE = '__export_filename__'
 
 
 PARENTS = '__parents__'
@@ -79,8 +80,34 @@ class RamlMixin:
         setattr(owner, name, self.__class__)
 
     @classmethod
+    def __get_parent_filepath__(cls):
+        parent = getattr(cls, PARENTS, None)
+        if parent is None:
+            return ''
+
+        filepath = getattr(parent, RAML_FILE, None)
+        if filepath is None:
+            filepath = parent.__get_parent_filepath__()
+
+        filepath = cls.__get_abspath__(os.path.dirname(filepath))
+        return filepath
+
+    @classmethod
+    def __get_abspath__(cls, filepath):
+        root_path = os.environ.get('RAML_ROOT_PATH', os.getcwd())
+        abspath = filepath if os.path.isabs(filepath) else None
+        abspath = abspath or os.path.join(root_path, filepath)
+        abspath = os.path.abspath(abspath)
+        return abspath
+
+    @classmethod
     def __get_attr_type__(cls, attr):
-        return cls.__annotations__[attr]
+        attr_type = None
+        for mro in cls.__mro__:
+            attr_type = getattr(mro, ANNOTATIONS, {}).get(attr, None)
+            if attr_type is not None:
+                break
+        return attr_type
 
     @classmethod
     def __is_raml__(cls, value):
@@ -98,7 +125,12 @@ class RamlMixin:
             value: _Union[_Type[_T], object] = getattr(cls, attr, None)
 
             if cls.__is_raml__(value):
-                value = value.__raml_dict__()
+                if getattr(value, RAML_FILE, None):
+                    parent_filepath = cls.__get_parent_filepath__()
+                    raml_file = cls.__get_abspath__(getattr(value, RAML_FILE))
+                    value = f'!include {os.path.relpath(raml_file, parent_filepath)}'
+                else:
+                    value = value.__raml_dict__()
             elif isinstance(value, list):
                 value = [v.__raml_dict__() if cls.__is_raml__(v) else v for v in value]
             elif isinstance(value, dict):
@@ -107,65 +139,81 @@ class RamlMixin:
             if isinstance(value, (list, dict)) and len(value) == 0:
                 value = None
             if value is not None:
-                attr_name = cls.__raml_attr_names__.get(attr, attr)
+                attr_name =  getattr(cls, RAML_ATTR_NAMES, {}).get(attr, attr)
                 raml[attr_name] = value
         return raml
 
     @classmethod
-    def __raml_yaml__(cls):
+    def __dump_raml__(cls):
+        raml_dict = cls.__raml_dict__()
+        raml = f'{yaml.dump(raml_dict, default_flow_style=False, allow_unicode=True)}'
+
+        # raml_dict = cls.__raml_dict__()
         # raml = f'#%RAML 1.0{linesep}' \
         #        f'---{linesep}' \
-        #        f'{yaml.dump(cls.__raml_dict__(), default_flow_style=False, allow_unicode=True)}'
-
-        raml_dict = cls.__raml_dict__()
-        raml = f'#%RAML 1.0{linesep}' \
-               f'---{linesep}' \
-               f'{yaml.dump(raml_dict, default_flow_style=False, allow_unicode=True, sort_keys=False)}'
+        #        f'{yaml.dump(raml_dict, default_flow_style=False, allow_unicode=True, sort_keys=False)}'
+        raml = re.sub(r"'(!include .+)'", r"\g<1>", raml)
         return raml
 
     @classmethod
-    def load_raml_file(cls, filename):
-        if filename:
-            root_path = os.environ.get('RAML_ROOT_PATH', os.getcwd())
-            file_path = filename if os.path.isabs(filename) else None
-            file_path = file_path or os.path.join(root_path, filename)
-            with open(os.path.abspath(file_path), 'r') as f:
-                # raml = yaml.load(f, Loader=yaml.FullLoader)
-                raml = yaml.load(f, Loader=yaml.Loader)
-        return cls.load_raml(raml=raml)
+    def __export_raml__(cls, filename=None):
+        filename = filename or getattr(cls, EXPORT_FILE)
+        raml = cls.__dump_raml__()
+        with open(os.path.abspath(filename), 'w') as f:
+            f.write(raml)
+        logging.debug(f'Export raml ({cls.__name__}): {filename}')
 
     @classmethod
-    def load_raml(cls, raml, class_name=None):
+    def __import_raml__(cls, filename=None, loader=None):
+        filename = filename or getattr(cls, RAML_FILE)
+        if filename:
+            file_path = cls.__get_abspath__(filename)
+            with open(file_path, 'r') as f:
+                yaml_string = f.read()
+            #yaml.load(yaml_string, Loader=yaml.FullLoader)
+            yaml_string = re.sub(r"(!include\s+.+)", r"'\g<1>'", yaml_string)
+            raml = yaml.load(yaml_string)
+            new_cls = cls.__load_raml__(raml)
+            setattr(new_cls, RAML_FILE, file_path)
+            return new_cls
+        return cls
+
+    @classmethod
+    def __load_raml__(cls, raml, class_name=None, loader=None):
         namespace = {}
         annotations = {}
+
+        if type(raml) is str:
+            if re.match('!include\s+.+', raml):
+                filename = re.match('!include\s+(.+)', raml)[1]
+                new_cls =cls.__import_raml__(filename)
+                return new_cls
+
+        if type(raml) is not dict:
+            raise TypeError('Error loading raml')
+
         for k, v in raml.items():
-            value = getattr(cls, k, v)
-            if inspect.isclass(value) and issubclass(value, RamlMixin):
-                value = value.load_raml(raml=v)
-                annotations[k] = _Type[value]
-            if type(value) == str:
-                value = value.strip()
+            value_type = cls.__get_attr_type__(k)
+
+            if  inspect.isclass(value_type) and issubclass(value_type, RamlMixin):
+                value = value_type.__load_raml__(raml=v)
             else:
-                annotations[k] = _Type[type(value)]
+                value = v
+                if type(value) is str:
+                    value = value.strip()
+            annotations[k] = value_type
             namespace[k] = value
+
         namespace[ANNOTATIONS] = annotations
         raml_cls = type(class_name or cls.__name__, (cls, ), namespace)
         return raml_cls               # type: ignore
 
-    @classmethod
-    def export_raml(cls, filename=None):
-        filename = filename or getattr(cls, EXPORT_FILE)
-        raml = cls.__raml_yaml__()
-        with open(os.path.abspath(filename), 'w') as f:
-            f.write(raml)
-
-        logging.debug(f'Export raml ({cls.__name__}): {filename}')
 
 
 class RamlMetaClass(type):
     def __new__(mcs, name, bases, namespace):
         if RAML_FILE in namespace:
-            bases = [base.load_raml_file(filename=namespace[RAML_FILE]) for base in bases]
+            bases = [base.__import_raml__(filename=namespace[RAML_FILE]) for base in bases]
 
         attrs = list(namespace.get(RAML_ATTRS, []))
         attrs.extend(list(namespace.get(ANNOTATIONS, {})))
@@ -193,12 +241,17 @@ class RamlMetaClass(type):
 
     def __set_name__(self, owner, name):
         namespace = {ATTR_NAME: name, IS_ATTR: True}
-
         qualname = f'{owner.__name__}.name.{self.__name__}'
         attr_class = RamlMetaClass(qualname, (self, ), namespace)
         attr_class.__name__ = self.__name__
         setattr(attr_class, PARENTS, owner)
         setattr(owner, name, attr_class)
+
+    # def __str__(cls):
+    #     return cls.__dump_raml__()
+
+    def __dump_raml__(self):
+        pass
 
 
 class BaseRaml(RamlMixin, metaclass=RamlMetaClass):
@@ -228,7 +281,7 @@ class List(BaseRaml):
         return raml or None
 
     @classmethod
-    def load_raml(cls, raml, class_name=None):
+    def __load_raml__(cls, raml, class_name=None):
         namespace = {'items': raml}
         return type(class_name or cls.__name__, (cls, ), namespace)
 
@@ -259,6 +312,7 @@ class Dict(BaseRaml):
 
 
 class Properties(BaseRaml):
+    __property_class__ = RamlMixin
     __allowed__: _Union[_List[_Type[RamlMixin]], _Type[RamlMixin], None] = None
     __types__: dict = {}
 
@@ -279,7 +333,7 @@ class Properties(BaseRaml):
         return raml if len(raml) else None
 
     @classmethod
-    def load_raml(cls, raml):
+    def __load_raml__(cls, raml, class_name=None):
         attrs = list(raml.keys())
         types = cls.__types__.copy()
 
@@ -292,7 +346,7 @@ class Properties(BaseRaml):
             type_name = value.get('type', None) if isinstance(value, dict) else value
             if type_name in types:
                 if isinstance(value, dict):
-                    attr_cls = types[type_name].load_raml(value, class_name=attr)
+                    attr_cls = types[type_name].__load_raml__ (value, class_name=attr)
                 else:
                     attr_cls = type(attr, (types[type_name], ), {})
             else:
@@ -423,18 +477,31 @@ class ObjectMetaClass(RamlMetaClass):
         annotation.update(namespace.get(ANNOTATIONS, {}))
         namespace[ANNOTATIONS] = annotation
 
-        try:
-            if bases[0] is Object and name.split('.')[-1] == 'Object':
-                namespace[IS_SINGLE_OBJECT] = True
-        except NameError:
-            pass
+        is_dynamic_object = False
+        if namespace.get('type', 'object') != 'object' and getattr(bases[0], 'type', None) == 'object':
+            name = namespace['type']
+            namespace[IS_DYNAMIC_OBJECT] = is_dynamic_object = True
+        else:
+            try:
+                if bases[0] is Object and name.split('.')[-1] == 'Object':
+                    namespace[IS_SINGLE_OBJECT] = True
+            except NameError:
+                pass
 
-        if not namespace.get(IS_INSTANCE, False) and not namespace.get(IS_ATTR, False):
+        if not namespace.get(IS_INSTANCE, False) and not namespace.get(IS_ATTR, False) or is_dynamic_object:
             properties = []
             properties_namespace = {}
             if 'Properties' in namespace.keys():
-                properties_namespace[ANNOTATIONS] = getattr(namespace['Properties'], ANNOTATIONS, {})
+                properties_namespace[ANNOTATIONS] = {}
+                for k, v in namespace['Properties'].__dict__.items():
+                    if re.match('__.+__', k) or inspect.ismethod(v):
+                        continue
+                    properties_namespace[ANNOTATIONS][k] = v if inspect.isclass(v) else type(v)
                 properties.append(namespace['Properties'])
+            elif 'properties' in namespace.keys():
+                namespace['Properties'] = type('Properties', (object, ), namespace['properties'].__dict__)
+
+
 
             type_name = []
             for base in bases:
@@ -459,7 +526,8 @@ class ObjectMetaClass(RamlMetaClass):
             if type_name:
                 namespace['type'] = Enum(type_name) if len(type_name) > 1 else type_name[0]
 
-        return super().__new__(mcs, name, bases, namespace)
+        new_class = super().__new__(mcs, name, bases, namespace)
+        return new_class
 
 
 # noinspection PyPep8Naming
@@ -729,7 +797,7 @@ class QueryParameter(UriParameters):
     pass
 
 
-class Body(BaseRaml):
+class Body(Properties):
     json: Object
     xml: Object
 
@@ -744,8 +812,8 @@ class Body(BaseRaml):
             xml: _Dict[str, _Any] = None,
             **kwargs
     ):
-        kwargs['json'] = Object(type=None, properties=Properties(json)) if json else None
-        kwargs['xml'] = Object(type=None, properties=Properties(xml)) if xml else None
+        kwargs['json'] = Object(properties=Properties(json)) if json else None
+        kwargs['xml'] = Object(properties=Properties(xml)) if xml else None
         super().__init__(*args, **kwargs)
 
 
@@ -859,6 +927,7 @@ class Resource(BaseRaml):
     type: TypeMixin
     securedBy: SecuredBy
     resources: Resources
+
     __raml_attr_names__ = {'is_': 'is'}
 
     def __init__(
@@ -915,15 +984,40 @@ class Trait(Method):
         super().__init__(*args, **kwargs)
 
 
+    @classmethod
+    def __dump_raml__(cls):
+        raml = super().__dump_raml__()
+        raml = f'#%RAML 1.0 Trait{linesep}' \
+               f'---{linesep}' \
+               f'{raml}'
+        return raml
+
+
 trait_attrs: list = getattr(Trait, RAML_ATTRS)
 trait_attrs.insert(0, trait_attrs.pop(trait_attrs.index('usage')))
 
 
 class Traits(Properties):
-    pass
+    __property_class__ = Trait
+    __allowed__ = Trait
+
+    @classmethod
+    def __load_raml__(cls, raml, class_name=None):
+        annotations = {}
+        namespace = {}
+
+        for k, v in raml.items():
+            property_class = cls.__property_class__.__load_raml__(v)
+            annotations[k] =  property_class
+            namespace[k] = property_class
+        namespace[ANNOTATIONS] = annotations
+        raml_cls = type(class_name or cls.__name__, (cls, ), namespace)
+        return raml_cls
 
 
-Traits.__allowed__ = Trait
+
+
+
 
 
 # load from raml file
@@ -968,6 +1062,14 @@ class Api(BaseRaml):
         resources: dict = raml.pop('resources', {})
         if resources:
             raml.update(resources)
+        return raml
+
+    @classmethod
+    def __dump_raml__(cls):
+        raml = super().__dump_raml__()
+        raml = f'#%RAML 1.0{linesep}' \
+               f'---{linesep}' \
+               f'{raml}'
         return raml
 
 
