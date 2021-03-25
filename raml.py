@@ -93,11 +93,14 @@ class RamlMixin:
         return filepath
 
     @classmethod
-    def __get_abspath__(cls, filepath):
-        root_path = os.environ.get('RAML_ROOT_PATH', os.getcwd())
+    def __get_abspath__(cls, filepath, root_path=None):
+        root_path = root_path if root_path else os.environ.get('RAML_ROOT_PATH', os.getcwd())
+        if os.path.isfile(root_path):
+            root_path = os.path.dirname(root_path)
         abspath = filepath if os.path.isabs(filepath) else None
         abspath = abspath or os.path.join(root_path, filepath)
         abspath = os.path.abspath(abspath)
+        print(abspath)
         return abspath
 
     @classmethod
@@ -164,39 +167,33 @@ class RamlMixin:
         logging.debug(f'Export raml ({cls.__name__}): {filename}')
 
     @classmethod
-    def __import_raml__(cls, filename=None, loader=None):
+    def __import_raml__(cls, filename=None):
         filename = filename or getattr(cls, RAML_FILE)
         if filename:
-            file_path = cls.__get_abspath__(filename)
-            with open(file_path, 'r') as f:
+            filepath = cls.__get_abspath__(filename)
+
+            with open(filepath, 'r') as f:
                 yaml_string = f.read()
             #yaml.load(yaml_string, Loader=yaml.FullLoader)
             yaml_string = re.sub(r"(!include\s+.+)", r"'\g<1>'", yaml_string)
             raml = yaml.load(yaml_string)
-            new_cls = cls.__load_raml__(raml)
-            setattr(new_cls, RAML_FILE, file_path)
+
+            new_cls = cls.__load_raml__(raml, filepath=filepath)
+
+            setattr(new_cls, RAML_FILE, filepath)
             return new_cls
         return cls
 
     @classmethod
-    def __load_raml__(cls, raml, class_name=None, loader=None):
+    def __raml_loader__(cls, raml, class_name=None, **kwargs):
         namespace = {}
         annotations = {}
-
-        if type(raml) is str:
-            if re.match('!include\s+.+', raml):
-                filename = re.match('!include\s+(.+)', raml)[1]
-                new_cls =cls.__import_raml__(filename)
-                return new_cls
-
-        if type(raml) is not dict:
-            raise TypeError('Error loading raml')
 
         for k, v in raml.items():
             value_type = cls.__get_attr_type__(k)
 
             if  inspect.isclass(value_type) and issubclass(value_type, RamlMixin):
-                value = value_type.__load_raml__(raml=v)
+                value = value_type.__load_raml__(v, class_name=class_name, **kwargs)
             else:
                 value = v
                 if type(value) is str:
@@ -209,6 +206,36 @@ class RamlMixin:
         return raml_cls               # type: ignore
 
 
+    @classmethod
+    def __load_raml__(cls, raml, class_name=None, filepath=None):
+        value = raml
+        if isinstance(raml, str):
+            if re.match('!include\s+.+', raml):
+                filename = re.match('!include\s+(.+)', raml)[1]
+                filename = cls.__get_abspath__(filename, root_path=filepath)
+                new_cls =cls.__import_raml__(filename)
+                value = new_cls
+        elif isinstance(raml, dict):
+            value = cls.__raml_loader__(raml, class_name=class_name, filepath=filepath)
+
+        return value
+
+    @classmethod
+    def __tree__(cls, attr_name=None, space=0):
+        attr_name = attr_name or f'{{ {cls.__name__} }}'
+        tree = f'{" "*space}|- {attr_name} : {cls.__bases__}{os.linesep}'
+        for attr_name in getattr(cls, RAML_ATTRS):
+            attr = getattr(cls, attr_name, None)
+            if attr is None:
+                continue
+            if inspect.isclass(attr) and issubclass(attr, RamlMixin):
+                try:
+                    tree = tree + attr.__tree__(attr_name=attr_name, space=space+4)
+                except TypeError as e:
+                    raise e
+            else:
+                tree = tree + f'{" "*(space+4)}|- {attr_name} : {str(type(attr))}{os.linesep}'
+        return tree
 
 class RamlMetaClass(type):
     def __new__(mcs, name, bases, namespace):
@@ -281,7 +308,7 @@ class List(BaseRaml):
         return raml or None
 
     @classmethod
-    def __load_raml__(cls, raml, class_name=None):
+    def __raml_loader__(cls, raml, class_name=None):
         namespace = {'items': raml}
         return type(class_name or cls.__name__, (cls, ), namespace)
 
@@ -333,7 +360,7 @@ class Properties(BaseRaml):
         return raml if len(raml) else None
 
     @classmethod
-    def __load_raml__(cls, raml, class_name=None):
+    def __raml_loader__(cls, raml, class_name=None, **kwargs):
         attrs = list(raml.keys())
         types = cls.__types__.copy()
 
@@ -344,24 +371,28 @@ class Properties(BaseRaml):
             value = raml.get(attr)
 
             type_name = value.get('type', None) if isinstance(value, dict) else value
-            if type_name in types:
-                if isinstance(value, dict):
-                    attr_cls = types[type_name].__load_raml__ (value, class_name=attr)
+            try:
+                if type_name in types:
+                    if isinstance(value, dict):
+                        attr_cls = types[type_name].__load_raml__(value, class_name=attr, **kwargs)
+                    else:
+                        attr_cls = type(attr, (types[type_name], ), {})
                 else:
-                    attr_cls = type(attr, (types[type_name], ), {})
-            else:
-                attr_cls = None
+                    attr_cls = None
 
-            if inspect.isclass(attr_cls) and issubclass(attr_cls, Object):
-                if attr_cls in types:
-                    namespace[attr] = attr_cls()
+                if inspect.isclass(attr_cls) and issubclass(attr_cls, Object):
+                    if attr_cls in types:
+                        namespace[attr] = attr_cls()
+                    else:
+                        namespace[attr] = attr_cls
                 else:
                     namespace[attr] = attr_cls
-            else:
-                namespace[attr] = attr_cls
 
-            types[attr] = attr_cls
-            annotation[attr] = attr_cls
+                types[attr] = attr_cls
+                annotation[attr] = attr_cls
+            except TypeError as e:
+                print(e)
+
 
         namespace[ANNOTATIONS] = annotation
         raml_cls = type(cls.__name__, (cls, ), namespace)
@@ -450,6 +481,11 @@ class TypeMixin(RamlMixin):
     def __validate__(self, value):
         # todo : validation
         pass
+
+    @classmethod
+    def __tree__(cls, attr_name=None, space=0):
+        tree = f'{" "*space}|- {attr_name} : {cls.type.capitalize()}{os.linesep}'
+        return tree
 
     @classmethod
     def __raml_dict__(cls):
@@ -1002,12 +1038,12 @@ class Traits(Properties):
     __allowed__ = Trait
 
     @classmethod
-    def __load_raml__(cls, raml, class_name=None):
+    def __raml_loader__(cls, raml, class_name=None, **kwargs):
         annotations = {}
         namespace = {}
 
         for k, v in raml.items():
-            property_class = cls.__property_class__.__load_raml__(v)
+            property_class = cls.__property_class__.__load_raml__(v, class_name=class_name, **kwargs)
             annotations[k] =  property_class
             namespace[k] = property_class
         namespace[ANNOTATIONS] = annotations
