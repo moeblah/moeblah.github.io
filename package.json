@@ -1,0 +1,16 @@
+{
+  "name": "moeblah.github.io",
+  "version": "0.0.1",
+  "description": "Moe Documentation page",
+  "main": "index.js",
+  "repository": "https://github.com/moeblah/moeblah.github.io",
+  "author": "mogiblahblah@gmail.com",
+  "license": "MIT",
+  "devDependencies": {
+    "vuepress": "^2.0.0-beta.25"
+  },
+  "scripts": {
+    "docs:dev": "vuepress dev docs",
+    "docs:build": "vuepress build docs"
+  }
+}
