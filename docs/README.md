@@ -1,1 +1,5 @@
-# Hello Moe Documentation page
+---
+title: Moe Docs
+lang: en-US
+---
+# Hello Moe Docs
