@@ -11,8 +11,22 @@ export default defineUserConfig<DefaultThemeOptions>({
             {text: 'Home', link: '/'},
             {text: 'History', link: '/history/'},
             {text: 'MoeGrid', link: '/moe_grid/'},
-        ]
-    },
-    markdown: {
+        ],
+        sidebar: {
+            '/history/': [
+                {
+                    text: 'History',
+                    children: [
+                        {text: 'Install Node.js on Ubuntu', link: 'install_node_js_on_ubuntu.md'},
+                        {text: 'Create VuePress project', link: 'create_vuepress_project.md'},
+                        {text: 'Deploy VuePress to GitHub page', link: 'deploy_vuepress_to_github_page.md'},
+                        {text: 'Authentication to GitHub', link: 'authentication_to_github.md'},
+                        {text: 'Install docker on Ubuntu 20.04', link: 'install_docker_on_ubuntu_20_04.md'},
+                        {text: 'Create docker image for Vuepress', link: 'create_docker_image_for_vuepress.md'},
+                    ],
+                },
+            ],
+        },
+        markdown: {}
     }
 })

@@ -41,7 +41,7 @@ fi
 
 2. Create Dockerfile.
 
-```Dockerfile
+```dockerfile
 FROM node:14-alpine
 ADD entrypoint.sh /usr/bin
 
