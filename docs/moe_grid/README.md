@@ -17,11 +17,11 @@ const columns = [
 ]
 
 // specify the data
-const data = {
+const data = [ 
   { make: "Hyundai", model: "Sonata", price: 35000 },
   { make: "Ford", model: "Mondeo", price: 32000 },
   { make: "Porsche", model: "Boxter", price: 7200 }
-}
+]
 
 // let the grid know which columns and what data to use
 const gridOptions = {
