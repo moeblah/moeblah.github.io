@@ -10,7 +10,7 @@ export default defineUserConfig<DefaultThemeOptions>({
         navbar: [
             {text: 'Home', link: '/'},
             {text: 'History', link: '/history/'},
-            {text: 'MoeGrid', link: '/moe_grid/'},
+            {text: 'MoeGrid', link: '/moegrid/'},
         ],
         sidebar: {
             '/history/': [
