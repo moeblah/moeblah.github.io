@@ -26,6 +26,15 @@ export default defineUserConfig<DefaultThemeOptions>({
                     ],
                 },
             ],
+            '/moegrid/': [
+                {
+                    text: 'History',
+                    children: [
+                        {text: 'Prepare To Develop', link: 'prepare_to_develop.md'},
+                        {text: 'Getting Started', link: 'getting_started.md'},
+                    ],
+                },
+            ],
         },
         markdown: {}
     }
