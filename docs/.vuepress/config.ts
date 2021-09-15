@@ -1,10 +1,15 @@
 import { defineUserConfig } from "vuepress";
 import type { DefaultThemeOptions } from "vuepress";
 
+const { path } = require('@vuepress/utils');
+
+console.log('component : ' + path.resolve(__dirname, './components/hello.vue'));
+
 export default defineUserConfig<DefaultThemeOptions>({
     lang: 'en-US',
     title: "Moe Page",
     description: '',
+    debug: false,
     themeConfig: {
         darkMode: true,
         navbar: [
@@ -36,6 +41,17 @@ export default defineUserConfig<DefaultThemeOptions>({
                 },
             ],
         },
-        markdown: {}
-    }
+        markdown: {
+        },
+        // plugins: [
+        //     [
+        //         '@vuepress/register-components',
+        //         {
+        //             components: {
+        //                 hello: path.resolve(__dirname, './components/hello.vue')
+        //             },
+        //         },
+        //     ],
+        // ],
+    },
 })
