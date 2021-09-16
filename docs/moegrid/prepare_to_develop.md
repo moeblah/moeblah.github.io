@@ -92,6 +92,14 @@ Ref: [Generating a new SSH Key and adding it to the ssh agent](https://docs.gith
   git clone git@github.com:<GitHub Username>/<GitHub Username>.github.io.git
   ```
   9. Set .gitignore file
+  ```shell
+  cd <GitHub Username>.github.io.git
+  cat .temp >> .gitignore
+  cat .temp/ >> .gitignore
+  cat .idea >> .gitignore
+  cat yarn.lock >> .gitignore
+  cat package-lock.json >> gitignore
+  ```
 
 ## Create VuePress
   1. Create VuePress project
@@ -100,3 +108,6 @@ Ref: [Generating a new SSH Key and adding it to the ssh agent](https://docs.gith
   4. Commit git
   5. Push git on GitHub
   6. Visit Project page of GitHub
+
+
+## Debug setting for JetBrains's IDEA
