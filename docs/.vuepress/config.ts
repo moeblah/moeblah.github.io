@@ -9,7 +9,6 @@ export default defineUserConfig<DefaultThemeOptions>({
     lang: 'en-US',
     title: "Moe Page",
     description: '',
-    debug: false,
     themeConfig: {
         darkMode: true,
         navbar: [

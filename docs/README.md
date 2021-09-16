@@ -6,5 +6,6 @@ lang: en-US
 
 ## Component test
 
-<hello/>
+<hello-world/>
 
+<moegrid-hello/>

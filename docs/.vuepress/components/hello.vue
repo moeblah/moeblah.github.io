@@ -1,18 +1,24 @@
 <template>
-  <p class="demo">
-    {{ msg }} !!
-  </p>
+  <div id="hello-world" ></div>
 </template>
-<script>
 
-export default{
-    data() {
-      return {
-        msg: 'Hello this is demo-component'
-      }
-    }
-  }
+<script lang="ts">
+import {helloWorld} from "../../../src/helloworld";
+
+function a(v: string): void{
+  console.log(v)
+}
+
+
+export default {
+  name: 'hello-world',
+  mounted() {
+    helloWorld('#hello-world');
+    a(null);
+  },
+}
 </script>
 
 <style scoped>
+
 </style>
