@@ -1,5 +1,5 @@
 import { defineClientAppEnhance } from '@vuepress/client';
-import { defineAsyncComponent } from 'vue'
+import {defineAsyncComponent, defineComponent} from 'vue'
 
 
 export default defineClientAppEnhance(({ app, router, siteData }) => {
@@ -8,7 +8,7 @@ export default defineClientAppEnhance(({ app, router, siteData }) => {
         defineAsyncComponent(() => import('./components/hello.vue'))
     );
     app.component(
-        'moegrid-hello',
-        defineAsyncComponent(() => import('./components/moegrid/hello.vue'))
+        'moegrid-get-started',
+        defineAsyncComponent(() => import('./components/moegrid/get-started.vue'))
     );
 })

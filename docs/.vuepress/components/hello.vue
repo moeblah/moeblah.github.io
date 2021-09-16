@@ -9,7 +9,6 @@ function a(v: string): void{
   console.log(v)
 }
 
-
 export default {
   name: 'hello-world',
   mounted() {
@@ -18,7 +17,7 @@ export default {
   },
   methods: {
     click: function(){
-      console.loc('click!!!')
+      a('click!!!')
     }
   }
 }

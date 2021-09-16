@@ -8,4 +8,4 @@ lang: en-US
 
 <hello-world/>
 
-<moegrid-hello/>
+<moegrid-get-started/>

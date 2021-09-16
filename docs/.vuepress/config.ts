@@ -3,7 +3,7 @@ import type { DefaultThemeOptions } from "vuepress";
 
 const { path } = require('@vuepress/utils');
 
-console.log('component : ' + path.resolve(__dirname, './components/hello.vue'));
+console.log('component : ' + path.resolve(__dirname, './components/get-started.vue'));
 
 export default defineUserConfig<DefaultThemeOptions>({
     lang: 'en-US',
@@ -47,7 +47,7 @@ export default defineUserConfig<DefaultThemeOptions>({
         //         '@vuepress/register-components',
         //         {
         //             components: {
-        //                 hello: path.resolve(__dirname, './components/hello.vue')
+        //                 hello: path.resolve(__dirname, './components/get-started.vue')
         //             },
         //         },
         //     ],
