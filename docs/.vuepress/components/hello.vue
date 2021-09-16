@@ -1,5 +1,5 @@
 <template>
-  <div id="hello-world" ></div>
+  <div id="hello-world" v-on:click="click"></div>
 </template>
 
 <script lang="ts">
@@ -16,6 +16,11 @@ export default {
     helloWorld('#hello-world');
     a(null);
   },
+  methods: {
+    click: function(){
+      console.loc('click!!!')
+    }
+  }
 }
 </script>
 
