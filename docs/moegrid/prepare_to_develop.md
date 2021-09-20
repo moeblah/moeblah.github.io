@@ -86,28 +86,62 @@ Ref: [Generating a new SSH Key and adding it to the ssh agent](https://docs.gith
   5. Check **Add .gitignore** and then select **node** of **.gitignore template**
   6. Check **Choose license** and then select **License: MIT License**
   7. Click **Create repository** button
-  8. Open terminal
-  9. Clone GitHub repository
-  ```shell
+
+## Clone Git repository and create VuePress v2 Project
+  1. Open terminal
+  2. Clone GitHub repository and change working directory.
+  ```shell:no-line-number
   git clone git@github.com:<GitHub Username>/<GitHub Username>.github.io.git
-  ```
-  9. Set .gitignore file
-  ```shell
   cd <GitHub Username>.github.io.git
+  ```
+  3. Add ```.temp```, ```.idea```, ```yarn.lock``` and ```package-lock.json``` to .gitignore 
+  ```shell:no-line-number
   cat .temp >> .gitignore
-  cat .temp/ >> .gitignore
   cat .idea >> .gitignore
   cat yarn.lock >> .gitignore
   cat package-lock.json >> gitignore
   ```
-
-## Create VuePress
-  1. Create VuePress project
-  2. Create GitHub workflow
-  3. Add new files to git
-  4. Commit git
-  5. Push git on GitHub
-  6. Visit Project page of GitHub
+  4. Initialize node project
+  ```shell:no-line-number
+  yarn init
+  ```
+  5. Install VuePress locally
+  ```shell:no-line-number
+  yarn add -D vuepress@next 
+  ```
+  6. Add some scripts to ```package.json```
+  ```json
+  {
+    "scripts": {
+      "docs:dev": "vuepress dev docs",
+      "docs:build": "vuepress build docs"
+    }
+  }  
+  ```
+  7. Create your first document.
+  ```shell:no-line-number
+  mkdir docs
+  echo '# Hello VuePress' > docs/README.md
+  ```
+  8. Serve the documentation site in the local server
+  ```shell:no-line-number
+  yarn docs:dev
+  ```
+  9. Create GitHub workflow
+  @[code](../../.github/workflows/docs.yml)
+  10. Add new files to git
+  ```shell
+  git add .
+  ```
+  11. Commit git
+  ```shell
+  git commit -m "Initialize Vuepress."
+  ```
+  12. Push git on GitHub
+  ```shell
+  git push
+  ```
+  13. Visit Project page of GitHub
 
 
 ## Debug setting for JetBrains's IDEA

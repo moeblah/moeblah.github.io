@@ -105,11 +105,9 @@ dist
 
 # Vuepress dev temp directoreis
 .temp
-.temp/
 
 # IntelliJ IDEA
 .idea
-.idea/
 
 yarn.lock
 package-lock.json
