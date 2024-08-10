@@ -11,8 +11,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
+
+      - name: Check if samples directory exists
+        run: |
+          if [ ! -d "samples" ]; then
+            echo "samples directory does not exist in the root of the repository."
+            exit 1
+          fi
 
       - name: Checkout gh-pages branch
         uses: actions/checkout@v2
@@ -22,8 +27,7 @@ jobs:
 
       - name: Copy samples directory to gh-pages
         run: |
-          git rm -r --cached .
-          cp -R samples/* .
+          cp -R ../samples/* .
           git add .
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
