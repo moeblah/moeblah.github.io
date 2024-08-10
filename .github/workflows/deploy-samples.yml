@@ -25,6 +25,10 @@ jobs:
           ref: gh-pages
           fetch-depth: 0
 
+      - name: Show Directory
+        run: |
+          pwd
+
       - name: Copy samples directory to gh-pages
         run: |
           cp -R ../samples/* .
