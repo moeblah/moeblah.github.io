@@ -25,12 +25,10 @@ jobs:
           ref: gh-pages
           fetch-depth: 0
 
-      - name: Show Directory
-        run: |
-          pwd
-
       - name: Copy samples directory to gh-pages
         run: |
+          pwd
+          ls -al
           cp -R ../samples/* .
           git add .
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
