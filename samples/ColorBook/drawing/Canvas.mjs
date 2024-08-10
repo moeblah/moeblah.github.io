@@ -20,7 +20,11 @@ class Canvas{
     document.addEventListener('mouseup', (e)=>this.endDrawing(e))
 
     this.element.addEventListener('touchstart', (e)=>this.startDrawing(e))
-    this.element.addEventListener('touchmove', (e)=>this.draw(e))
+    this.element.addEventListener('touchmove', (e)=>{
+      e.preventDefault()
+      e.stopPropagation()
+      this.draw(e)
+    })
     document.addEventListener('touchend', (e)=>this.endDrawing(e))
 
     this.isDrawing = false
