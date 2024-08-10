@@ -23,17 +23,17 @@ class Canvas{
       e.preventDefault()
       e.stopPropagation()
       this.startDrawing(e)
-    })
+    }, { passive: false })
     this.element.addEventListener('touchmove', (e)=>{
       e.preventDefault()
       e.stopPropagation()
       this.draw(e)
-    })
+    }, { passive: false })
     document.addEventListener('touchend', (e)=>{
       e.preventDefault()
       e.stopPropagation()
       this.endDrawing(e)
-    })
+    }, { passive: false })
 
     this.isDrawing = false
     setInterval(()=>{this.render()}, 1000/60)
