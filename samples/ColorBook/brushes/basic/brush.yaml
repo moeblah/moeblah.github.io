@@ -1,0 +1,10 @@
+
+images:
+  - "basic.png"
+
+defaultOptions:
+  size: 10.0
+  spacing: 0.5
+  opacity: 1.0
+  force: 0.3
+

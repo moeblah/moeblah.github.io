@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-size=1.0">
+  <title>Colorbook App</title>
+  <style>
+    canvas {
+      border: 1px solid black;
+      margin: 10px;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      margin: 10px;
+    }
+    .color-palette {
+      display: flex;
+      margin-left: 10px;
+    }
+    .color-box {
+      width: 20px;
+      height: 20px;
+      margin: 2px;
+      cursor: pointer;
+      border: 1px solid #000;
+    }
+  </style>
+</head>
+<body>
+<h1>Colorbook App</h1>
+<div class="controls">
+  <div>
+    <label for="outlineSetter">도안 불러오기: </label>
+    <input type="button" id="outlineSetter" name="outlineSetter" value="불러오기">
+  </div>
+
+  <div>
+    <label for="outlineUnSetter">도안 지우기: </label>
+    <input type="button" id="outlineUnSetter" name="outlineUnSetter" value="지우기">
+  </div>
+
+  <div>
+    <label for="reset">캔버스 초기화: </label>
+    <input type="button" id="reset" name="reset" value="초기화">
+  </div>
+
+</div>
+<div class="controls">
+  <div>
+    <label for="drawTools">Brush Pattern: </label>
+    <select id="drawTools" name="drawTools">
+      <option value="basic">basic</option>
+      <option value="chalk">chalk</option>
+      <option value="marker">marker</option>
+      <option value="fill">fill</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="colorPicker">Brush Color: </label>
+    <input type="color" id="colorPicker" name="colorPicker" value="#00FF00">
+  </div>
+
+  <div>
+    <label for="userBoundary">경계면 사용: </label>
+    <input type="checkbox" id="userBoundary" name="userBoundary" value="1">
+  </div>
+
+</div>
+<div class="controls">
+  <div>
+    <label for="brushSize">Brush Size: </label>
+    <input type="range" id="brushSize" name="brushSize" min="1" max="200" value="20">
+  </div>
+  <div>
+    <label for="brushSpacing">Brush Spacing: </label>
+    <input type="range" id="brushSpacing" name="brushSpacing" min="0" max="200" value="100">
+  </div>
+</div>
+<div class="controls">
+  <div>
+    <label for="brushOpacity">Brush Opacity: </label>
+    <input type="range" id="brushOpacity" name="brushOpacity" min="0" max="100" value="50">
+  </div>
+  <div>
+    <label for="brushForce">Brush Force: </label>
+    <input type="range" id="brushForce" name="brushForce" min="0" max="100" value="50">
+  </div>
+  <div>
+    <div class="color-palette" id="colorPalette"></div>
+  </div>
+</div>
+<!--<div class="controls">-->
+<!--  <div>-->
+<!--    <label for="brushAngle">Brush Opacity: </label>-->
+<!--    <input type="range" id="brushAngle" name="brushAngle" min="0" max="360" value="0">-->
+<!--  </div>-->
+<!--</div>-->
+<canvas id="canvas" width="500" height="500"></canvas>
+
+<canvas id="sticker" width="500" height="500"></canvas>
+
+<script type="module">
+  import Canvas from "./drawing/Canvas.mjs"
+  import Brush from "./drawing/Brush.mjs"
+  import Fill from "./drawing/Fill.mjs";
+
+  const brush = new Brush()
+  const fill = new Fill()
+  const canvas = new Canvas(document.getElementById('canvas'))
+
+  function loadBrush(){
+    const drawTool = document.getElementById('drawTools').value
+
+    if (drawTool === 'fill'){
+      canvas.setDrawTool(fill)
+      fill.color = document.getElementById('colorPicker').value
+      fill.opacity = document.getElementById('brushOpacity').value / 100
+    } else {
+      canvas.setDrawTool(brush)
+      brush.setBrush(`./brushes/${drawTool}`)
+      brush.color = document.getElementById('colorPicker').value
+
+      document.getElementById('userBoundary').checked = brush.useBoundary
+      document.getElementById('brushSize').value = Math.round(brush.size)
+      document.getElementById('brushSpacing').value = Math.round(brush.spacing * 100)
+      document.getElementById('brushOpacity').value = Math.round(brush.opacity * 100)
+      document.getElementById('brushForce').value =  Math.round(brush.force * 100)
+      // document.getElementById('brushAngle').value =  brush.angle
+    }
+  }
+
+  function setBrush(){
+    fill.color = document.getElementById('colorPicker').value
+    fill.opacity = document.getElementById('brushOpacity').value / 100
+
+    brush.useBoundary = document.getElementById('userBoundary').checked
+    brush.color = document.getElementById('colorPicker').value
+    brush.opacity = document.getElementById('brushOpacity').value / 100
+    brush.size = document.getElementById('brushSize').value
+    brush.spacing = document.getElementById('brushSpacing').value / 100
+    brush.force = document.getElementById('brushForce').value / 100
+    //brush.angle = document.getElementById('brushAngle').value
+  }
+
+  document.getElementById('colorPicker').addEventListener('change', (e)=>{setBrush()})
+  document.getElementById('brushSize').addEventListener('change', (e)=>{setBrush()})
+  document.getElementById('brushSpacing').addEventListener('change', (e)=>{setBrush()})
+  document.getElementById('brushOpacity').addEventListener('change', (e)=>{setBrush()})
+  document.getElementById('brushForce').addEventListener('change', (e)=>{setBrush()})
+  document.getElementById('userBoundary').addEventListener('click', (e)=>{setBrush()})
+  // document.getElementById('brushAngle').addEventListener('change', (e)=>{setBrush()})
+  document.getElementById('drawTools').addEventListener('change', (e)=>{loadBrush()})
+
+  document.getElementById('outlineSetter').addEventListener('click', (e)=>{
+    canvas.setOutline('./outlines/sample.png')
+  })
+
+  document.getElementById('outlineUnSetter').addEventListener('click', (e)=>{
+    canvas.unsetOutline()
+  })
+
+
+  document.getElementById('reset').addEventListener('click', (e)=>{
+    canvas.reset()
+  })
+  loadBrush()
+</script>
+
+<script src="sample/stickerSample.js"></script>
+</body>
+</html>
