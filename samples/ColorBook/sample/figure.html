@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canvas Sticker</title>
+  <style>
+    canvas {
+      border: 1px solid black;
+    }
+  </style>
+</head>
+<body>
+<canvas id="canvas1" width="10" height="10"></canvas>
+<canvas id="canvas2" width="10" height="10"></canvas>
+<canvas id="canvas3" width="10" height="10"></canvas>
+<canvas id="canvas4" width="10" height="10"></canvas>
+<canvas id="canvas5" width="10" height="10"></canvas>
+<canvas id="canvas6" width="10" height="10"></canvas>
+<canvas id="canvas7" width="10" height="10"></canvas>
+<canvas id="canvas8" width="10" height="10"></canvas>
+<canvas id="canvas9" width="10" height="10"></canvas>
+<canvas id="canvas10" width="10" height="10"></canvas>
+<canvas id="canvas" width="10" height="10"></canvas>
+<script type="module">
+  import Figure from '../drawing/Figure.mjs'
+
+  Figure.createFromImage('sticker2.png')
+    .then(figure => {
+      const width = 180
+      const height = 80
+      const radians = 45 * (Math.PI / 180)
+
+      for (let i=1; i<11; i++){
+        console.time('transform')
+        figure.transform({width: i*10, height: i*20, radians: i * 36 * (Math.PI / 180)})
+        document.getElementById(`canvas${i}`).width = figure.width + 10
+        document.getElementById(`canvas${i}`).height= figure.height + 10
+        document.getElementById(`canvas${i}`).getContext('2d').putImageData(figure.imageData, 5, 5)
+        console.timeEnd('transform')
+      }
+
+      figure.transform({scale: 0.5, radians: 0})
+      document.getElementById(`canvas`).width = figure.width + 10
+      document.getElementById(`canvas`).height = figure.height + 10
+      document.getElementById(`canvas`).getContext('2d').putImageData(figure.imageData, 5, 5)
+
+    })
+    .catch(error=>{
+      console.log(error)
+    })
+
+
+</script>
+</body>
+</html>

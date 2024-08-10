@@ -1,0 +1,10 @@
+
+images:
+  - "Chalk-01.png"
+
+defaultOptions:
+  size: 50
+  spacing: 0.3
+  opacity: 1
+  force: 0.8
+
